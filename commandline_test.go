@@ -4,7 +4,7 @@ import (
 	"testing"
 )
 
-func makeTest(t *testing.T) *Parser {
+func TestCommandLine(t *testing.T) {
 
 	cmdGlobalFlags := func(params *Params) error {
 		// fmt.Println("Verbose flag specified.")
@@ -43,13 +43,6 @@ func makeTest(t *testing.T) *Parser {
 		t.Fatal(err)
 	}
 
-	return cl
-}
-
-func TestCommandLine(t *testing.T) {
-
-	cl := makeTest(t)
-
 	if err := cl.Parse([]string{"--verbose", "list", "-ac", "--username", "foo bar", "names"}); err != nil {
 		t.Fatal(err)
 	}
@@ -69,20 +62,16 @@ func TestCustomHandler(t *testing.T) {
 	}
 
 	cl := New()
-	if _, err := cl.Register("test", "", handler); err != nil {
+	cmd, err := cl.Register("test", "", handler)
+	if err != nil {
 		t.Fatal(err)
+	}
+
+	if _, err := cmd.Register("fail", "", nil); err == nil {
+		t.Fatal("command allowed registering of sub-command on a command with a raw handler")
 	}
 
 	if err := cl.Parse(append([]string{"test"}, testparams...)); err != nil {
 		t.Fatal(err)
-	}
-}
-
-func BenchmarkCommandLine(b *testing.B) {
-	b.StopTimer()
-	cl := makeTest(nil)
-	b.StartTimer()
-	for i := 0; i < b.N; i++ {
-		cl.Parse([]string{"--verbose", "list", "-ac", "--username", "foo", "names"})
 	}
 }

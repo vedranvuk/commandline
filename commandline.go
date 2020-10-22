@@ -257,9 +257,9 @@ type Commands struct {
 }
 
 // newCommands returns a new Commands instance owned by owner.
-func newCommands(owner interface{}) *Commands {
+func newCommands(parent interface{}) *Commands {
 	return &Commands{
-		parent:     owner,
+		parent:     parent,
 		commandmap: make(commandMap),
 	}
 }
@@ -283,6 +283,12 @@ func (c *Commands) Register(name, help string, cmdFunc interface{}) (*Command, e
 		return nil, ErrDuplicateName
 	}
 
+	if parentcmd, ok := c.parent.(*Command); ok {
+		if _, ok := parentcmd.f.(CommandRawFunc); ok {
+			return nil, errors.New("commandline: cannot register a sub Command in a Command with a CommandRawHandler")
+		}
+	}
+
 	if cmdFunc != nil {
 		if _, ok := cmdFunc.(CommandFunc); !ok {
 			if _, ok := cmdFunc.(CommandRawFunc); !ok {
@@ -292,11 +298,11 @@ func (c *Commands) Register(name, help string, cmdFunc interface{}) (*Command, e
 	}
 
 	cmd := &Command{
-		help:     help,
-		f:        cmdFunc,
-		params:   newParams(),
-		Commands: *newCommands(c),
+		help:   help,
+		f:      cmdFunc,
+		params: newParams(),
 	}
+	cmd.Commands = *newCommands(cmd)
 	c.commandmap[name] = cmd
 
 	return cmd, nil
