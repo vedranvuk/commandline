@@ -222,7 +222,7 @@ func (p *Parser) String() string {
 				}
 			}
 			sb.WriteRune('\t')
-			if param.reqvalue || cmd.raw {
+			if param.reqvalue || (cmd.raw && param.typename != "") {
 				sb.WriteString("\t(")
 				sb.WriteString(param.typename)
 				sb.WriteString(")\t")
@@ -563,14 +563,10 @@ func (p *Params) AddParam(long, short, help string, required bool, value interfa
 // If value is a pointer to a Go value, value will be set to arg at index of
 // this Param as registered.
 // If an error occurs it is returned and the Param is not registered.
-func (p *Params) AddRawParam(name, help string, index int, required bool, value interface{}) error {
+func (p *Params) AddRawParam(name, help string, required bool, value interface{}) error {
 
 	if _, ok := p.cmd.f.(CommandRawFunc); !ok {
 		return errors.New("commandline: cannot register a raw param, command does not have a CommandRawFunc handler")
-	}
-
-	if index != len(p.rawparams) {
-		return errors.New("commandline: raw param index out of order")
 	}
 
 	if len(p.rawparams) > 0 {

@@ -1,6 +1,7 @@
 package commandline
 
 import (
+	"fmt"
 	"testing"
 )
 
@@ -21,7 +22,7 @@ func TestHandler(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := cmd.Params.AddParam("verbose", "v", "Enable verbose output.", false, nil); err != nil {
+	if err := cmd.AddParam("verbose", "v", "Enable verbose output.", false, nil); err != nil {
 		t.Fatal(err)
 	}
 
@@ -29,21 +30,21 @@ func TestHandler(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cmd.Params.AddParam("path", "p", "Path to target.", false, nil)
-	cmd.Params.AddParam("recursive", "r", "Recursively delete all files in subfolders.", false, nil)
+	cmd.AddParam("path", "p", "Path to target.", false, nil)
+	cmd.AddParam("recursive", "r", "Recursively delete all files in subfolders.", false, nil)
 
 	cmd, err = cl.AddCommand("list", "List items.", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := cmd.Params.AddParam("all", "a", "List all items.", false, nil); err != nil {
+	if err := cmd.AddParam("all", "a", "List all items.", false, nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := cmd.Params.AddParam("color", "c", "Use color when listing.", false, nil); err != nil {
+	if err := cmd.AddParam("color", "c", "Use color when listing.", false, nil); err != nil {
 		t.Fatal(err)
 	}
 	username := ""
-	if err := cmd.Params.AddParam("username", "u", "Specify username.", false, &username); err != nil {
+	if err := cmd.AddParam("username", "u", "Specify username.", false, &username); err != nil {
 		t.Fatal(err)
 	}
 
@@ -54,6 +55,8 @@ func TestHandler(t *testing.T) {
 	if _, err := cmd.AddCommand("names", "List names.", cmdListNames); err != nil {
 		t.Fatal(err)
 	}
+
+	fmt.Println(cl)
 
 	if err := cl.Parse([]string{"--verbose", "list", "-ac", "--username", "foo bar", "names"}); err != nil {
 		t.Fatal(err)
@@ -87,21 +90,20 @@ func TestCustomHandler(t *testing.T) {
 	two := ""
 	three := ""
 
-	if err := cmd.Params.AddRawParam("One", "First parameter", 0, true, &one); err != nil {
+	if err := cmd.AddRawParam("One", "First parameter", true, &one); err != nil {
 		t.Fatal(err)
 	}
-	if err := cmd.Params.AddRawParam("Two", "Second parameter", 1, true, &two); err != nil {
+	if err := cmd.AddRawParam("Two", "Second parameter", true, &two); err != nil {
 		t.Fatal(err)
 	}
-	if err := cmd.Params.AddRawParam("Seventeen", "Seventeenth parameter", 17, false, nil); err == nil {
-		t.Fatal("Allowed setting a raw param at out of order index.")
-	}
-	if err := cmd.Params.AddRawParam("Three", "Third parameter", 2, false, nil); err != nil {
+	if err := cmd.AddRawParam("Three", "Third parameter", false, nil); err != nil {
 		t.Fatal(err)
 	}
-	if err := cmd.Params.AddRawParam("Fourth", "Fourth parameter", 3, true, nil); err == nil {
+	if err := cmd.AddRawParam("Fourth", "Fourth parameter", true, nil); err == nil {
 		t.Fatal("Allowed registration of required parameter after non-required parameter")
 	}
+
+	fmt.Println(cl)
 
 	if err := cl.Parse(append([]string{"test"}, testparams...)); err != nil {
 		t.Fatal(err)
