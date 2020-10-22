@@ -3,6 +3,7 @@ package commandline
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"reflect"
 	"strings"
@@ -35,7 +36,16 @@ var (
 // To stop further command line parsing the function can return an error.
 // The error will be propagated back to Parser.Parse caller who is responsible
 // for interpreting the error.
-type CommandFunc func(*Params) error
+type CommandFunc = func(*Params) error
+
+// CommandRawFunc is the raw params version of CommandFunc which passes all
+// remaining unparsed command line args following the command invocation
+// argument to the handler. Registering this handler for a Command disables
+// registering sub-Commands for that Command as all remaining args are passed
+// to it and parsing stops after its invocation.
+//
+// This is to allow custom argument parsing.
+type CommandRawFunc = func([]string) error
 
 // Parser is a command line parser. Its' Parse method is to be invoked
 // with a slice of command line arguments passed to program.
@@ -119,9 +129,28 @@ func New() *Parser {
 // Parse parses specified args, usually invoked as Parse(os.Args[1:])
 // If a parse error occurs or an invoked CommandFunc returns an error
 // it is returned.
-func (cl *Parser) Parse(args []string) error {
-	cl.args = args
-	return cl.Commands.parse(cl)
+func (p *Parser) Parse(args []string) error {
+	p.args = args
+	return p.Commands.parse(p)
+}
+
+func indent(depth int) string {
+	buf := make([]byte, depth)
+	for i := 0; i < depth; i++ {
+		buf[i] = '\t'
+	}
+	return string(buf)
+}
+
+func printCommands(cmds *Commands, indent int, lines *[]string) {
+
+}
+
+// String implements Stringer on Parser.
+func (p *Parser) String() string {
+	lines := []string{}
+	printCommands(&p.Commands, 0, &lines)
+	return fmt.Sprint(lines)
 }
 
 // argKind defines argument kind.
@@ -154,19 +183,19 @@ func (ak argKind) String() (s string) {
 
 // peek returns the first arg in args if args are not empty, otherwise returns
 // an empty string.
-func (cl *Parser) peek() string {
-	if len(cl.args) > 0 {
-		return cl.args[0]
+func (p *Parser) peek() string {
+	if len(p.args) > 0 {
+		return p.args[0]
 	}
 	return ""
 }
 
 // arg returns the first arg in Parser trimmed of any prefixes and its' kind.
-func (cl *Parser) arg() (arg string, kind argKind) {
-	if len(cl.args) == 0 {
+func (p *Parser) arg() (arg string, kind argKind) {
+	if len(p.args) == 0 {
 		return "", argNone
 	}
-	arg = cl.args[0]
+	arg = p.args[0]
 	for i := 0; ; i++ {
 		if arg[i] == '-' {
 			if kind == argNone {
@@ -193,9 +222,9 @@ func (cl *Parser) arg() (arg string, kind argKind) {
 
 // next discards the first arg in the args slice and returns a bool indicating
 // if there is any args left.
-func (cl *Parser) next() bool {
-	cl.args = cl.args[1:]
-	return len(cl.args) > 0
+func (p *Parser) next() bool {
+	p.args = p.args[1:]
+	return len(p.args) > 0
 }
 
 // Command defines a command.
@@ -203,7 +232,7 @@ func (cl *Parser) next() bool {
 // further down the Commands chain.
 type Command struct {
 	help   string      // help is the command help text.
-	f      CommandFunc // f is the function to invoke when this COmmand is executed.
+	f      interface{} // f is the function to invoke when this COmmand is executed.
 	params *Params
 	Commands
 }
@@ -239,37 +268,45 @@ func newCommands(owner interface{}) *Commands {
 // Command with an empty name which can serve for the purpose of global params.
 //
 // If a registration error occurs it is returned with a nil Command.
-func (cs *Commands) Register(name, help string, f CommandFunc) (*Command, error) {
+func (c *Commands) Register(name, help string, cmdFunc interface{}) (*Command, error) {
 
 	if name == "" {
-		if _, ok := cs.parent.(*Parser); !ok {
+		if _, ok := c.parent.(*Parser); !ok {
 			return nil, ErrInvalidName
 		}
 	}
 
-	if _, exists := cs.commandmap[name]; exists {
+	if _, exists := c.commandmap[name]; exists {
 		return nil, ErrDuplicateName
+	}
+
+	if cmdFunc != nil {
+		if _, ok := cmdFunc.(CommandFunc); !ok {
+			if _, ok := cmdFunc.(CommandRawFunc); !ok {
+				return nil, errors.New("commandline: invalid cmdFunc parameter")
+			}
+		}
 	}
 
 	cmd := &Command{
 		help:     help,
-		f:        f,
+		f:        cmdFunc,
 		params:   newParams(),
-		Commands: *newCommands(cs),
+		Commands: *newCommands(c),
 	}
-	cs.commandmap[name] = cmd
+	c.commandmap[name] = cmd
 
 	return cmd, nil
 }
 
 // Command returns a *Command by name if found and truth if found.
-func (cs *Commands) Command(name string) (cmd *Command, ok bool) {
-	cmd, ok = cs.commandmap[name]
+func (c *Commands) Command(name string) (cmd *Command, ok bool) {
+	cmd, ok = c.commandmap[name]
 	return
 }
 
 // parse parses Parser args into this Commands.
-func (cs *Commands) parse(cl *Parser) error {
+func (c *Commands) parse(cl *Parser) error {
 	arg, kind := cl.arg()
 	// Arguments exhausted.
 	if kind == argNone {
@@ -281,20 +318,27 @@ func (cs *Commands) parse(cl *Parser) error {
 	if kind != argCommand {
 		// Arg is not a Command. See if a special case
 		// of single unnamed root command.
-		cmd, exists = cs.commandmap[""]
+		cmd, exists = c.commandmap[""]
 		if !exists {
 			return errors.New("commandline: expected command, got " + kind.String())
 		}
 		global = true
 	} else {
 		// Arg is a Command.
-		cmd, exists = cs.commandmap[arg]
+		cmd, exists = c.commandmap[arg]
 		if !exists {
 			return errors.New("commandline: command '" + arg + "' not found")
 		}
 	}
 	// Advance args.
 	if cl.next() {
+		// Early CommandRawFunc invocation passes any
+		// remaining args to it and stops further parsing.
+		if cmd.f != nil {
+			if cmdfunc, ok := cmd.f.(CommandRawFunc); ok {
+				return cmdfunc(cl.args)
+			}
+		}
 		// Parse Params.
 		if err := cmd.params.parse(cl, cmd); err != nil {
 			return err
@@ -308,12 +352,16 @@ func (cs *Commands) parse(cl *Parser) error {
 	}
 	// Execute Command.
 	if cmd.f != nil {
-		if err := cmd.f(cmd.params); err != nil {
-			return err
+		if cmdfunc, ok := cmd.f.(CommandFunc); ok {
+			if err := cmdfunc(cmd.params); err != nil {
+				return err
+			}
+		} else {
+			panic("commandline: Command.f is not of CommandFunc type")
 		}
 	}
 	if global {
-		return cs.parse(cl)
+		return c.parse(cl)
 	}
 	return cmd.Commands.parse(cl)
 }
@@ -366,17 +414,17 @@ func newParams() *Params {
 //
 // Short params that take values, required or optional, cannot be combined.
 //
-func (ps *Params) Register(long, short, help string, required bool, value interface{}) error {
+func (p *Params) Register(long, short, help string, required bool, value interface{}) error {
 
 	if long == "" {
 		return ErrInvalidName
 	}
 
-	if _, exists := ps.longparams[long]; exists {
+	if _, exists := p.longparams[long]; exists {
 		return ErrDuplicateName
 	}
 
-	if _, exists := ps.shortparams[short]; exists {
+	if _, exists := p.shortparams[short]; exists {
 		return ErrDuplicateName
 	}
 
@@ -384,29 +432,29 @@ func (ps *Params) Register(long, short, help string, required bool, value interf
 		return ErrValueRequired
 	}
 
-	p := &Param{
+	param := &Param{
 		help:     help,
 		required: required,
 		value:    value,
 	}
 
-	ps.longparams[long] = p
-	ps.shortparams[short] = p
+	p.longparams[long] = param
+	p.shortparams[short] = param
 
 	return nil
 }
 
 // Parsed returns if the param under specified name was parsed.
 // If the Param under specified name is not registered, returns false.
-func (ps *Params) Parsed(name string) bool {
-	if param, exists := ps.shortparams[name]; exists {
+func (p *Params) Parsed(name string) bool {
+	if param, exists := p.shortparams[name]; exists {
 		return param.parsed
 	}
 	return false
 }
 
 // parse parses the Parser args into this Params.
-func (ps *Params) parse(cl *Parser, cmd *Command) error {
+func (p *Params) parse(cl *Parser, cmd *Command) error {
 	for {
 		arg, kind := cl.arg()
 		var param *Param
@@ -415,13 +463,13 @@ func (ps *Params) parse(cl *Parser, cmd *Command) error {
 		case argNone, argCommand:
 			return nil
 		case argShort:
-			param, exists = ps.shortparams[arg]
+			param, exists = p.shortparams[arg]
 			if !exists {
 				return errors.New("commandline: short parameter '" + arg + "' not found")
 			}
 			param.parsed = true
 		case argLong:
-			param, exists = ps.longparams[arg]
+			param, exists = p.longparams[arg]
 			if !exists {
 				return errors.New("commandline: long parameter '" + arg + "' not found")
 			}
@@ -429,7 +477,7 @@ func (ps *Params) parse(cl *Parser, cmd *Command) error {
 		case argComb:
 			shorts := strings.Split(arg, "")
 			for _, short := range shorts {
-				param, exists = ps.shortparams[short]
+				param, exists = p.shortparams[short]
 				if !exists {
 					return errors.New("commandline: short parameter '" + short + "' not found")
 				}

@@ -55,6 +55,29 @@ func TestCommandLine(t *testing.T) {
 	}
 }
 
+func TestCustomHandler(t *testing.T) {
+
+	testparams := []string{"one", "two", "three"}
+
+	handler := func(args []string) error {
+		for idx, val := range args {
+			if testparams[idx] != val {
+				t.Fatal("TestCustomHandler failed")
+			}
+		}
+		return nil
+	}
+
+	cl := New()
+	if _, err := cl.Register("test", "", handler); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := cl.Parse(append([]string{"test"}, testparams...)); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func BenchmarkCommandLine(b *testing.B) {
 	b.StopTimer()
 	cl := makeTest(nil)
