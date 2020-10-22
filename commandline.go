@@ -223,6 +223,9 @@ func (p *Parser) arg() (arg string, kind argKind) {
 // next discards the first arg in the args slice and returns a bool indicating
 // if there is any args left.
 func (p *Parser) next() bool {
+	if len(p.args) == 0 {
+		return false
+	}
 	p.args = p.args[1:]
 	return len(p.args) > 0
 }
