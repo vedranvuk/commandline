@@ -444,8 +444,11 @@ func (c *Commands) parse(cl *Parser) error {
 			if err := cmdfunc(&cmd.Params); err != nil {
 				return err
 			}
-		} else {
-			panic("commandline: Command.f is not of CommandFunc type")
+		}
+		if cmdfunc, ok := cmd.f.(CommandRawFunc); ok {
+			if err := cmdfunc(cl.args); err != nil {
+				return err
+			}
 		}
 	}
 	if global {
