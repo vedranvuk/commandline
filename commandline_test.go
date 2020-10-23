@@ -2,7 +2,6 @@ package commandline
 
 import (
 	"errors"
-	"fmt"
 	"testing"
 )
 
@@ -141,7 +140,6 @@ func TestHandler(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	fmt.Println(cl.Print())
 }
 
 func TestRegisteredRaw(t *testing.T) {
