@@ -2,6 +2,7 @@ package commandline
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 )
 
@@ -11,7 +12,7 @@ func TestHandler(t *testing.T) {
 		return nil
 	}
 
-	cmdDelete := func(Params []string) error {
+	cmdDelete := func(params *Params) error {
 		return nil
 	}
 
@@ -39,13 +40,6 @@ func TestHandler(t *testing.T) {
 	}
 	cmd.AddParam("path", "p", "Path to target.", false, nil)
 	cmd.AddParam("recursive", "r", "Recursively delete all files in subfolders.", false, nil)
-
-	bogusHandler := func(this, does, not, work bool) int {
-		return -1
-	}
-	if _, err = cl.AddCommand("invalidhandler", "This has an invalid handler.", bogusHandler); err == nil {
-		t.Fatal("Failed detecting invalid handler func.")
-	}
 
 	cmd, err = cl.AddCommand("list", "List items.", nil)
 	if err != nil {
@@ -85,9 +79,11 @@ func TestHandler(t *testing.T) {
 	if err := cmd.AddParam("username2", "u", "Specify username.", true, &username); err == nil {
 		t.Fatal("Failed detecting duplicate Param short name.")
 	}
-	if err := cmd.AddRawParam("norawallowed", "Should not register on a Command with a CommandFunc handler.", false, nil); err == nil {
-		t.Fatal("Failed detecting raw param registration on normal handler.")
-	}
+	/*
+		if err := cmd.AddRawParam("norawallowed", "Should not register on a Command with a CommandFunc handler.", false, nil); err == nil {
+			t.Fatal("Failed detecting raw param registration on normal handler.")
+		}
+	*/
 
 	cmdListNames := func(Params *Params) error {
 		// fmt.Printf("User '%s' requested names list.\n", username)
@@ -150,8 +146,8 @@ func TestRegisteredRaw(t *testing.T) {
 
 	testparams := []string{"one", "two", "three"}
 
-	handler := func(args []string) error {
-		for idx, val := range args {
+	handler := func(params *Params) error {
+		for idx, val := range params.RawArgs() {
 			if testparams[idx] != val {
 				t.Fatal("TestCustomHandler failed")
 			}
@@ -163,10 +159,6 @@ func TestRegisteredRaw(t *testing.T) {
 	cmd, err := cl.AddCommand("test", "", handler)
 	if err != nil {
 		t.Fatal(err)
-	}
-
-	if _, err := cmd.AddCommand("fail", "", nil); err == nil {
-		t.Fatal("command allowed registering of sub-command on a command with a raw handler")
 	}
 
 	one := ""
@@ -216,8 +208,8 @@ func TestUnregisteredRaw(t *testing.T) {
 
 	ErrOK := errors.New("everything is fine")
 
-	cmdTest := func(params []string) error {
-		for idx, arg := range params {
+	cmdTest := func(params *Params) error {
+		for idx, arg := range params.RawArgs() {
 			if testArgs[idx+1] != arg {
 				t.Fatal("Unregistered param mode failed.")
 			}
@@ -233,4 +225,46 @@ func TestUnregisteredRaw(t *testing.T) {
 	if err := cl.Parse(testArgs); err != ErrOK {
 		t.Fatal("Failed propagating the error.")
 	}
+}
+
+func TestCombinedParams(t *testing.T) {
+
+	cmdTest := func(params *Params) error {
+		fmt.Println(params.RawArgs())
+		return nil
+	}
+
+	one := ""
+	two := ""
+	_ = two
+	three := ""
+	four := ""
+
+	cl := New()
+
+	cmd, err := cl.AddCommand("test", "Test command with mixed params.", cmdTest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cmd.AddParam("one", "", "First, required parameter", true, &one); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmd.AddParam("two", "", "Second, optional parameter", false, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmd.AddRawParam("three", "Third, required raw parameter", true, &three); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmd.AddRawParam("four", "Fourth, optional raw parameter", false, &four); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := cl.Parse([]string{"test", "--one", "1", "--two", "three", "four"}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := cl.Parse([]string{"test", "--one", "1", "three", "four"}); err != nil {
+		t.Fatal(err)
+	}
+
 }
