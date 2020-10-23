@@ -6,7 +6,6 @@ import (
 	"errors"
 	"log"
 	"reflect"
-	"sort"
 	"strings"
 )
 
@@ -157,109 +156,48 @@ func resetParams(c *Commands) {
 	}
 }
 
-// paramdef is a print definition of a param.
-type paramdef struct {
-	long     string
-	short    string
-	help     string
-	typename string
-	reqvalue bool
-}
-
-// cmddef is a print definition of a command.
-type cmddef struct {
-	name   string
-	help   string
-	indent int
-	raw    bool
-	params []*paramdef
-}
-
-// getPrintDefs recursively prepares print definitions from Commands and Params.
-func getPrintDefs(cmds *Commands, indent int, items *[]*cmddef) {
-
-	for name, cmd := range cmds.commandmap {
-		pc := &cmddef{name: name, help: cmd.help, indent: indent}
-		pc.params = make([]*paramdef, 0, len(cmd.Params.longparams))
-		for _, pname := range cmd.Params.longindexes {
-			p := cmd.Params.longparams[pname]
-			short := cmd.Params.longtoshort[pname]
-			kind := ""
-			if p.value != nil {
-				kind = reflect.Indirect(reflect.ValueOf(p.value)).Kind().String()
-			}
-			pc.params = append(pc.params, &paramdef{pname, short, p.help, kind, p.required})
-		}
-		if !pc.raw {
-			sort.Slice(pc.params, func(i, j int) bool { return pc.params[i].long < pc.params[j].long })
-		}
-		*items = append(*items, pc)
-		if len(cmd.commandmap) > 0 {
-			getPrintDefs(&cmd.Commands, indent+1, items)
-		}
-	}
-}
-
-// indent constructs an tab indented string of specified depth.
-func indent(depth int) string {
-	buf := make([]byte, depth*2)
-	for i := 0; i < depth; i++ {
-		buf[i] = ' '
-		buf[i+1] = ' '
-	}
-	return string(buf)
-}
-
-// String implements Stringer on Parser.
-func (p *Parser) String() string {
-
-	items := []*cmddef{}
-	getPrintDefs(&p.Commands, 0, &items)
-	sort.Slice(items, func(i, j int) bool { return items[i].name < items[j].name })
-
-	sb := strings.Builder{}
-	for _, cmd := range items {
-		sb.WriteString(indent(cmd.indent))
-		sb.WriteString(cmd.name)
-		sb.WriteRune('\t')
-		sb.WriteString(cmd.help)
-		sb.WriteRune('\n')
-		for _, param := range cmd.params {
-			sb.WriteString(indent(cmd.indent))
-			sb.WriteRune('\t')
-			if param.short != "" && !cmd.raw {
-				sb.WriteRune('-')
-				sb.WriteString(param.short)
-			}
-			sb.WriteRune('\t')
-			if cmd.raw {
-				if param.reqvalue {
-					sb.WriteRune('<')
+func printCommands(sb *strings.Builder, commands *Commands, indent int) {
+	indentstr := strings.Repeat("\t", indent)
+	for _, commandname := range commands.nameindexes {
+		command := commands.commandmap[commandname]
+		sb.WriteString(indentstr + commandname + "\t" + command.help + "\n")
+		for _, paramlong := range command.Params.longindexes {
+			param := command.Params.longparams[paramlong]
+			if param.raw {
+				paramtype := ""
+				if param.value != nil {
+					paramtype = reflect.Indirect(reflect.ValueOf(param.value)).Type().Kind().String()
+					if param.required {
+						sb.WriteString(indentstr + "\t<" + paramlong + ">\t(" + paramtype + ")\t" + param.help + "\n")
+					} else {
+						sb.WriteString(indentstr + "\t[" + paramlong + "]\t(" + paramtype + ")\t" + param.help + "\n")
+					}
 				} else {
-					sb.WriteRune('[')
+					if param.required {
+						sb.WriteString(indentstr + "\t<" + paramlong + ">\t(" + paramtype + ")\t" + param.help + "\n")
+					} else {
+						sb.WriteString(indentstr + "\t[" + paramlong + "]\t \t" + param.help + "\n")
+					}
 				}
 			} else {
-				sb.WriteString("--")
-			}
-			sb.WriteString(param.long)
-			if cmd.raw {
-				if param.reqvalue {
-					sb.WriteRune('>')
+				if shortparam, ok := command.Params.longtoshort[paramlong]; ok {
+					sb.WriteString(indentstr + "\t--" + paramlong + "\t-" + shortparam + "\t" + param.help + "\n")
 				} else {
-					sb.WriteRune(']')
+					sb.WriteString(indentstr + "\t--" + paramlong + "\t \t" + param.help + "\n")
 				}
 			}
-			sb.WriteRune('\t')
-			if param.reqvalue || (cmd.raw && param.typename != "") {
-				sb.WriteString("\t(")
-				sb.WriteString(param.typename)
-				sb.WriteString(")\t")
-			}
-			sb.WriteString(param.help)
-			sb.WriteRune('\n')
 		}
-		sb.WriteRune('\n')
+		if len(command.Commands.commandmap) > 0 {
+			printCommands(sb, &command.Commands, indent+1)
+		}
 	}
+}
+
+// Print prints the Parser as currently configured.
+// Returns output suitable for terminal display.
+func (p Parser) Print() string {
+	sb := &strings.Builder{}
+	printCommands(sb, &p.Commands, 0)
 	return sb.String()
 }
 
@@ -380,6 +318,8 @@ type Commands struct {
 	parent interface{}
 	// commandmap is a map of command names to *Command definitions.
 	commandmap nameToCommand
+	// nameindexes is a slice of command names in order as they were defined.
+	nameindexes []string
 }
 
 // newCommands returns a new *Commands instance owned by parent.
@@ -423,6 +363,7 @@ func (c *Commands) AddCommand(name, help string, f CommandFunc) (*Command, error
 	// Define and add a new Command to self.
 	cmd := newCommand(help, f)
 	c.commandmap[name] = cmd
+	c.nameindexes = append(c.nameindexes, name)
 
 	return cmd, nil
 }

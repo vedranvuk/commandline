@@ -140,6 +140,8 @@ func TestHandler(t *testing.T) {
 	if err := cl.Parse([]string{"-v", "list", "--all", "-c", "-u", "foo bar", "names"}); err != nil {
 		t.Fatal(err)
 	}
+
+	fmt.Println(cl.Print())
 }
 
 func TestRegisteredRaw(t *testing.T) {
@@ -229,16 +231,22 @@ func TestUnregisteredRaw(t *testing.T) {
 
 func TestCombinedParams(t *testing.T) {
 
-	cmdTest := func(params *Params) error {
-		fmt.Println(params.RawArgs())
-		return nil
-	}
-
 	one := ""
 	two := ""
 	_ = two
 	three := ""
 	four := ""
+
+	cmdTest := func(params *Params) error {
+		/*
+			fmt.Println(params.RawArgs())
+			fmt.Println(one)
+			fmt.Println(two)
+			fmt.Println(three)
+			fmt.Println(four)
+		*/
+		return nil
+	}
 
 	cl := New()
 
