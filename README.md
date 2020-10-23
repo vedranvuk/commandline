@@ -79,7 +79,7 @@ helpcmd, err := cl.AddCommand("help", "Show help, optionally for a command", cmd
 
 
 // Register an optional raw parameter for "help" Command that specifies topic.
-helpcmd.AddRawParam("command", "Specify command to get help for.", 0, false, &helptopic)
+helpcmd.AddRawParam("command", "Specify command to get help for.", false, &helptopic)
 
 // Parse the command line arguments.
 // Returned error may be one of defined in commandline package denoting a Parse
@@ -102,7 +102,6 @@ What's left:
 * Specialcasing for JSON values passed via command line. Especially compound types and quoting stuffs.
 * Maybe abstract value parsing with codecs.
 * Make a better printer with functional tab alignment and definitely move it from String().
-* More tests.
 
 ## License
 

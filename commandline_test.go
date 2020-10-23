@@ -1,19 +1,17 @@
 package commandline
 
 import (
-	"fmt"
+	"errors"
 	"testing"
 )
 
 func TestHandler(t *testing.T) {
 
-	cmdGlobalFlags := func(Params *Params) error {
-		// fmt.Println("Verbose flag specified.")
+	cmdGlobalFlags := func(params *Params) error {
 		return nil
 	}
 
 	cmdDelete := func(Params []string) error {
-
 		return nil
 	}
 
@@ -22,6 +20,15 @@ func TestHandler(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	if c, ok := cl.GetCommand(""); !ok {
+		t.Fatal("GetCommand failed to find a command.")
+	} else {
+		if c != cmd {
+			t.Fatal("GetCommand returned the wrong Command.")
+		}
+	}
+
 	if err := cmd.AddParam("verbose", "v", "Enable verbose output.", false, nil); err != nil {
 		t.Fatal(err)
 	}
@@ -33,10 +40,26 @@ func TestHandler(t *testing.T) {
 	cmd.AddParam("path", "p", "Path to target.", false, nil)
 	cmd.AddParam("recursive", "r", "Recursively delete all files in subfolders.", false, nil)
 
+	bogusHandler := func(this, does, not, work bool) int {
+		return -1
+	}
+	if _, err = cl.AddCommand("invalidhandler", "This has an invalid handler.", bogusHandler); err == nil {
+		t.Fatal("Failed detecting invalid handler func.")
+	}
+
 	cmd, err = cl.AddCommand("list", "List items.", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	if _, err = cl.AddCommand("list", "This duplicate must not register.", nil); err != ErrDuplicateName {
+		t.Fatal("Failed detecting adding a command with a duplicate name.")
+	}
+
+	if _, err := cmd.AddCommand("", "This must not register", nil); err != ErrInvalidName {
+		t.Fatal("Failed detecting registering an empty command in a sub-Command.")
+	}
+
 	if err := cmd.AddParam("all", "a", "List all items.", false, nil); err != nil {
 		t.Fatal(err)
 	}
@@ -44,8 +67,26 @@ func TestHandler(t *testing.T) {
 		t.Fatal(err)
 	}
 	username := ""
-	if err := cmd.AddParam("username", "u", "Specify username.", false, &username); err != nil {
+	if err := cmd.AddParam("u", "username", "Specify username.", true, &username); err == nil {
+		t.Fatal("Failed detecting param short name length.")
+	}
+	if err := cmd.AddParam("username", "u", "Specify username.", true, nil); err == nil {
+		t.Fatal("Failed detecting required value for a required parameter.")
+	}
+	if err := cmd.AddParam("username", "u", "Specify username.", true, "nope"); err == nil {
+		t.Fatal("Failed detecting required value type for a required parameter.")
+	}
+	if err := cmd.AddParam("username", "u", "Specify username.", true, &username); err != nil {
 		t.Fatal(err)
+	}
+	if err := cmd.AddParam("username", "u", "Specify username.", true, &username); err == nil {
+		t.Fatal("Failed detecting duplicate Param long name.")
+	}
+	if err := cmd.AddParam("username2", "u", "Specify username.", true, &username); err == nil {
+		t.Fatal("Failed detecting duplicate Param short name.")
+	}
+	if err := cmd.AddRawParam("norawallowed", "Should not register on a Command with a CommandFunc handler.", false, nil); err == nil {
+		t.Fatal("Failed detecting raw param registration on normal handler.")
 	}
 
 	cmdListNames := func(Params *Params) error {
@@ -56,14 +97,56 @@ func TestHandler(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	fmt.Println(cl)
+	if err := cl.Parse([]string{}); err != ErrNoArgs {
+		t.Fatal("Failed detecting no args.")
+	}
+
+	if err := cl.Parse([]string{""}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := cl.Parse([]string{"list", "-acu", "foo bar"}); err == nil {
+		t.Fatal("Failed detecting combined param with required value.")
+	}
+
+	if err := cl.Parse([]string{"list", "--username"}); err == nil {
+		t.Fatal("Failed detecting required Param value.")
+	}
+
+	if err := cl.Parse([]string{"nosuchcommand"}); err == nil {
+		t.Fatal("Failed detecting non-existent command.")
+	}
+
+	if err := cl.Parse([]string{"--nosuchparam"}); err == nil {
+		t.Fatal("Failed detecting non-existent param.")
+	}
+
+	if err := cl.Parse([]string{"-v", "list", "-ac", "-u", "foo", "--whatnow"}); err == nil {
+		t.Fatal("Failed detecting non-existent parameter.")
+	}
+
+	if err := cl.Parse([]string{"--verbose", "list", "-ac", "names"}); err == nil {
+		t.Fatal("Failed detecting required Param.")
+	}
+
+	if err := cl.Parse([]string{"list", "-x"}); err == nil {
+		t.Fatal("Failed detecting non-existent short parameter.")
+	}
+
+	if err := cl.Parse([]string{"list", "-acx"}); err == nil {
+		t.Fatal("Failed detecting non-existent combined short parameter.")
+	}
 
 	if err := cl.Parse([]string{"--verbose", "list", "-ac", "--username", "foo bar", "names"}); err != nil {
 		t.Fatal(err)
 	}
+
+	if err := cl.Parse([]string{"-v", "list", "--all", "-c", "-u", "foo bar", "names"}); err != nil {
+		t.Fatal(err)
+	}
 }
 
-func TestCustomHandler(t *testing.T) {
+func TestRegisteredRaw(t *testing.T) {
 
 	testparams := []string{"one", "two", "three"}
 
@@ -102,8 +185,21 @@ func TestCustomHandler(t *testing.T) {
 	if err := cmd.AddRawParam("Fourth", "Fourth parameter", true, nil); err == nil {
 		t.Fatal("Allowed registration of required parameter after non-required parameter")
 	}
+	if err := cmd.AddRawParam("Fourth", "Fourth parameter", false, nil); err == nil {
+		t.Fatal("Allowed registration of non-required parameter after non-required parameter")
+	}
 
-	fmt.Println(cl)
+	if err := cl.Parse([]string{"--nonexistentparam"}); err == nil {
+		t.Fatal("Failed detecting a non-global param.")
+	}
+
+	if err := cl.Parse(append([]string{"test"}, "one")); err == nil {
+		t.Fatal("Failed detecting missing required argument.")
+	}
+
+	if err := cl.Parse(append(append([]string{"test"}, testparams...), "four")); err == nil {
+		t.Fatal("Failed detecting extra arguments for registered params.")
+	}
 
 	if err := cl.Parse(append([]string{"test"}, testparams...)); err != nil {
 		t.Fatal(err)
@@ -111,5 +207,30 @@ func TestCustomHandler(t *testing.T) {
 
 	if one != "one" || two != "two" || three != "" {
 		t.Fatal("Failed setting Param values.")
+	}
+}
+
+func TestUnregisteredRaw(t *testing.T) {
+
+	testArgs := []string{"test", "one", "two", "three"}
+
+	ErrOK := errors.New("everything is fine")
+
+	cmdTest := func(params []string) error {
+		for idx, arg := range params {
+			if testArgs[idx+1] != arg {
+				t.Fatal("Unregistered param mode failed.")
+			}
+		}
+		return ErrOK
+	}
+
+	cl := New()
+	if _, err := cl.AddCommand("test", "Do da test.", cmdTest); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := cl.Parse(testArgs); err != ErrOK {
+		t.Fatal("Failed propagating the error.")
 	}
 }
