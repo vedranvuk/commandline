@@ -17,16 +17,10 @@ var (
 	// ErrInvalidName is returned by Add* methods when an invalid Command or
 	// Param long or short name is specified.
 	ErrInvalidName = errors.New("commandline: invalid name")
-	// ErrDuplicateName is returned by Add* methods when an already registered
-	// Command or Param long or short name is specified.
-	ErrDuplicateName = errors.New("commandline: duplicate name")
 	// ErrInvalidValue is returned by Add* methods or during parsing if an
 	// invalid parameter is given for a Param value, i.e. not a valid pointer
 	// to a Go value.
 	ErrInvalidValue = errors.New("commandline: invalid value")
-	// ErrValueRequired is returned by Add* methods when no Go value is given
-	// for a Param marked as required.
-	ErrValueRequired = errors.New("commandline: value parameter required")
 )
 
 // CommandFunc is a prototype of a function that handles the event of a
@@ -359,7 +353,7 @@ func (c *Commands) AddCommand(name, help string, f CommandFunc) (*Command, error
 
 	// No duplicate names.
 	if _, exists := c.commandmap[name]; exists {
-		return nil, ErrDuplicateName
+		return nil, errors.New("commandline: duplicate name '" + name + "'")
 	}
 
 	// Disallow adding sub-Commands to a Command that has
@@ -540,12 +534,12 @@ func (p *Params) addParam(long, short, help string, required, raw bool, value in
 
 	// No long duplicates.
 	if _, exists := p.longparams[long]; exists {
-		return ErrDuplicateName
+		return errors.New("commandline: duplicate name '" + long + "'")
 	}
 
 	// No short duplicates.
 	if _, exists := p.shortparams[short]; exists {
-		return ErrDuplicateName
+		return errors.New("commandline: duplicate name '" + short + "'")
 	}
 
 	// Continuity checks, if any definitions exist.
@@ -567,7 +561,7 @@ func (p *Params) addParam(long, short, help string, required, raw bool, value in
 	// Required params need a valid Go value.
 	if value == nil {
 		if required {
-			return ErrValueRequired
+			return errors.New("commandline: value required")
 		}
 	} else {
 		// And require a valid value.

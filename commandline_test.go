@@ -45,7 +45,7 @@ func TestHandler(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err = cl.AddCommand("list", "This duplicate must not register.", nil); err != ErrDuplicateName {
+	if _, err = cl.AddCommand("list", "This duplicate must not register.", nil); err == nil {
 		t.Fatal("Failed detecting adding a command with a duplicate name.")
 	}
 
