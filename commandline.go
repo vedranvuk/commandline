@@ -4,6 +4,7 @@ package commandline
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"reflect"
 	"strings"
@@ -26,37 +27,19 @@ var (
 	// ErrValueRequired is returned by Add* methods when no Go value is given
 	// for a Param marked as required.
 	ErrValueRequired = errors.New("commandline: value parameter required")
-	// ErrArgumentRequired is returned when no argument is provided on command
-	// line for a Param that requires one.
-	ErrArgumentRequired = errors.New("commandline: param requires an argument")
 )
 
 // CommandFunc is a prototype of a function that handles the event of a
 // Command being parsed from command line arguments.
 //
-// Parser parses Command's Params, pauses parsing on next Command or exhausted
-// arguments and invokes parsed Command's CommandFunc carrying parsed Params
-// then either continues parsing if the handler returned nil or stops and
-// retrurns the error that the handler returned back to the Parse method.
+// Parser parses Command's Params and pauses parsing when it finds next Command
+// in arguments or it exhausts arguments, invokes parsed Command's CommandFunc
+// carrying parsed Params then either continues parsing if the handler returns
+// nil or stops and returns the error that the handler returned back to the
+// Parse method whose caller is responsible for interpreting that error.
 //
-// Parse caller is responsible for interpreting that error.
-//
-// See Commands.AddCommand and Params.AddParam for more details.
-//
-//
-//
-// CommandRawFunc is the raw Params version of CommandFunc which passes all
-// remaining command line args following the command invocation argument to the
-// handler. Registering this handler for a Command disables registering
-// sub-Commands for that Command and parsing stops after its' invocation.
-//
-// This is to allow custom argument parsing.
-//
-// Params can still be defined for a Command having a raw handler using
-// AddRawParam and are mapped on a 0-based index, in order as they are
-// registered.
-//
-// See Commands.AddCommand and Params.AddRawParam for more details.
+// If the invoked Command has any raw Params registered, parsing will not
+// continue after CommandFunc invocation.
 type CommandFunc = func(*Params) error
 
 // Parser is a command line parser. Its' Parse method is to be invoked
@@ -72,40 +55,55 @@ type CommandFunc = func(*Params) error
 // Root Commands, as an exception, allow for one Command with an empty name
 // to be defined. This is to allow that program args need not start with a
 // Command and to allow Params to be passed first which can act as "global".
+// e.g. "--verbose list users"
 //
 // Command can have one or more Param instances defined in its' Params which
-// can be either optional or required, and have both long and short names,
-// help text, be required or optional and have a pointer to a Go value assigned
-// to them which is written from Param value parsed from command line args.
+// can have names, help text, be required or optional and have an optional
+// pointer to a Go value which is written from a value following Param in
+// command line arguments.
+//
+// If a pointer to a Go value is registered with a Param, the Param will require
+// an argument following it that the parser will try to convert to the Go value
+// registered with Param. Otherwise the Param will act as a simple flag which
+// can be checked if parsed in the handler by checking the result of handler's
+// Params.Parsed("long param name").
+//
+// Parser supports prefixed and raw params which can be combined on a Command
+// with a caveat that the Command that has one or more raw params registered
+// cannot have sub-Commands because of ambiguities in parsing command names and
+// raw parameters as well as the fact that one last raw param can be optional.
+//
+// Prefixed params are explicitly addressed on a command line and can have
+// short and long forms. They can be marked optional or required and be
+// registered in any order, but before any raw params.
 //
 // Short Param names have the "-" prefix, can be one character long and can be
 // combined together following the short form prefix if none of the combined
 // Params require a Param Value. They are optional per Param.
 //
-// Long Param names have the "--" prefix and cannot be combined. They are
-// required.
+// Long Param names have the "--" prefix and cannot be combined.
+//
+// Raw params are not addressed but are instead matched against registered raw
+// Params in order of registration as they appear on command line, respectively.
+//
+// Prefixed and raw params can both be registered for a Command but raw params
+// must be registered last and specified after prefixed Params on the command
+// line.
+// e.g. "rmdir -v /home/me/stuff" where "rmdir" is a command, "-v" is a
+// prefixed param and "/home/me/stuff" is a raw parameter.
 //
 // If Params are defined as optional they do not cause a parse error if not
-// parsed from program args and can be optionally defined to parse a value
-// from args if a target Go value was specified during registration.
-// i.e. "-v" or "--verbose" or "-l :8080" or "--listenaddr :8080".
-//
-// If they are defined as required they cause a parse error if not parsed
-// from program args and must have a Value following it.
-// i.e. "-u root" or "--password 1337".
-//
-// See Params.AddParam for details on how a Param is defined.
+// parsed from program args and return a parse error if defined as required and
+// not parsed from command line.
 //
 // Command can have a CommandFunc registered optionaly so that a Command can
 // serve solely as sub-Command selector. For more details see CommandFunc.
 //
-// Command can have a CommandRawFunc registered that causes Parser to parse
-// arguments that follow the Command invocation as standalone and indexed in
-// order as they appear on the command line. This allows for custom parsers
-// and arrays of arguments.
+// If no Params were defined on a Command all command line arguments following
+// the command invocation will be passed to Command handler via Params.RawArgs.
 //
-// If no raw Params were defined on a Command with a CommandRawFunc handler
-// arguments will not be parsed and will just be passed to the handler as is.
+// If no params were defined on a Command and the command has no CommandFunc
+// registered an error is returned.
 //
 type Parser struct {
 	// args is a slice of arguments being parsed.
@@ -140,10 +138,10 @@ func (p *Parser) Parse(args []string) error {
 	return p.Commands.parse(p)
 }
 
-// reset resets the states prior to parsing.
+// reset resets any set states prior to parsing.
 func (p *Parser) reset() { resetParams(&p.Commands) }
 
-// resetParams recursively resets parsed flag of all Params in Commands.
+// resetParams recursively resets all Params in Commands.
 func resetParams(c *Commands) {
 	for _, cmd := range c.commandmap {
 		cmd.Params.rawargs = []string{}
@@ -156,6 +154,8 @@ func resetParams(c *Commands) {
 	}
 }
 
+// printCommands is a recursive printer or registered Commands and Params.
+// Lines are written to sb from current commands with the indent depth(*tab).
 func printCommands(sb *strings.Builder, commands *Commands, indent int) {
 	indentstr := strings.Repeat("\t", indent)
 	for _, commandname := range commands.nameindexes {
@@ -163,10 +163,12 @@ func printCommands(sb *strings.Builder, commands *Commands, indent int) {
 		sb.WriteString(indentstr + commandname + "\t" + command.help + "\n")
 		for _, paramlong := range command.Params.longindexes {
 			param := command.Params.longparams[paramlong]
+			paramtype := ""
+			if param.value != nil {
+				paramtype = reflect.Indirect(reflect.ValueOf(param.value)).Type().Kind().String()
+			}
 			if param.raw {
-				paramtype := ""
 				if param.value != nil {
-					paramtype = reflect.Indirect(reflect.ValueOf(param.value)).Type().Kind().String()
 					if param.required {
 						sb.WriteString(indentstr + "\t<" + paramlong + ">\t(" + paramtype + ")\t" + param.help + "\n")
 					} else {
@@ -180,10 +182,18 @@ func printCommands(sb *strings.Builder, commands *Commands, indent int) {
 					}
 				}
 			} else {
-				if shortparam, ok := command.Params.longtoshort[paramlong]; ok {
-					sb.WriteString(indentstr + "\t--" + paramlong + "\t-" + shortparam + "\t" + param.help + "\n")
+				if param.value != nil {
+					if shortparam, ok := command.Params.longtoshort[paramlong]; ok {
+						sb.WriteString(indentstr + "\t--" + paramlong + "\t-" + shortparam + "\t(" + paramtype + ")\t" + param.help + "\n")
+					} else {
+						sb.WriteString(indentstr + "\t--" + paramlong + "\t \t(" + paramtype + ")\t" + param.help + "\n")
+					}
 				} else {
-					sb.WriteString(indentstr + "\t--" + paramlong + "\t \t" + param.help + "\n")
+					if shortparam, ok := command.Params.longtoshort[paramlong]; ok {
+						sb.WriteString(indentstr + "\t--" + paramlong + "\t-" + shortparam + "\t" + param.help + "\n")
+					} else {
+						sb.WriteString(indentstr + "\t--" + paramlong + "\t \t" + param.help + "\n")
+					}
 				}
 			}
 		}
@@ -413,7 +423,7 @@ func (c *Commands) parse(cl *Parser) error {
 	// Check if required parameters were parsed.
 	for paramname, param := range cmd.Params.longparams {
 		if param.required && !param.parsed {
-			return errors.New("commandline: required parameter '" + paramname + "' for command '" + arg + "' not specified")
+			return errors.New("commandline: required parameter '" + paramname + "' not specified")
 		}
 	}
 
@@ -635,8 +645,12 @@ func (p *Params) parse(cl *Parser, cmd *Command) error {
 		case argCommandOrRaw:
 
 			// If no Params were defined abort parsing and store
-			// remaining arguments to be available to handler.
+			// remaining arguments to be available to handler
+			// or error out if it has no handler.
 			if len(p.longindexes) == 0 {
+				if cmd.f == nil {
+					return errors.New("commandline: no handler for arguments")
+				}
 				p.rawargs = append(p.rawargs, cl.args...)
 				return nil
 			}
@@ -674,7 +688,7 @@ func (p *Params) parse(cl *Parser, cmd *Command) error {
 				par.parsed = true
 				if !cl.next() {
 					if len(p.longindexes)-1 > i && par.required {
-						return errors.New("commandline: no argument specified for param '" + p.longindexes[i] + "'")
+						return errors.New("commandline: required parameter '" + p.longindexes[i+1] + "' not specified")
 					}
 					break
 				}
@@ -716,13 +730,12 @@ func (p *Params) parse(cl *Parser, cmd *Command) error {
 				param.parsed = true
 				i++
 			}
-
 		}
 
 		// Set value of normal Param if required.
 		if kind != argComb && param.value != nil {
 			if !cl.next() {
-				return ErrArgumentRequired
+				return errors.New("commandline: param '" + p.longindexes[i] + "' requires a value")
 			}
 			value, _ := cl.arg()
 			if err := stringToGoValue(value, param.value); err != nil {
@@ -742,7 +755,10 @@ func (p *Params) parse(cl *Parser, cmd *Command) error {
 // stringToGoValue converts a string to a Go value or returns an error.
 // TODO expand on this.
 func stringToGoValue(s string, i interface{}) error {
-	return jsonStringToGoValue(s, i)
+	if err := jsonStringToGoValue(s, i); err != nil {
+		return fmt.Errorf("commandline: error converting value %s: %w", s, err)
+	}
+	return nil
 }
 
 // jsonStringToGoValue converts a json string to a Go value or returns an error.
