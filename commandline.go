@@ -185,7 +185,8 @@ func getPrintDefs(cmds *Commands, indent int, items *[]*cmddef) {
 			pc.raw = true
 		}
 		pc.params = make([]*paramdef, 0, len(cmd.Params.longparams))
-		for pname, p := range cmd.Params.longparams {
+		for _, pname := range cmd.Params.longindexes {
+			p := cmd.Params.longparams[pname]
 			short := cmd.Params.longtoshort[pname]
 			kind := ""
 			if p.value != nil {
