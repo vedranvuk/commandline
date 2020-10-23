@@ -690,7 +690,7 @@ func (p *Params) parse(cl *Parser, cmd *Command) error {
 				}
 				par.parsed = true
 				if !cl.next() {
-					if len(p.longindexes)-1 > i && par.required {
+					if par = p.last(); par != nil && par.required && len(p.longindexes)-1 > i {
 						return errors.New("commandline: required parameter '" + p.longindexes[i+1] + "' not specified")
 					}
 					break
