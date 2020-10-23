@@ -342,7 +342,7 @@ func newCommands(parent interface{}) *Commands {
 
 // AddCommand registers a new Command under specified name and help text that
 // invokes f when parsed from arguments if it is not nil. Name is the only
-// required parameter and cmdFunc can be of CommandFunc or CommandRawFunc.
+// required parameter.
 //
 // If Commands is the root set in a Parser it can register a single Command
 // with an empty name to be an unnamed container in a global params pattern.
@@ -604,19 +604,22 @@ func (p *Params) last() *Param {
 // If required is specified value must be a pointer to a supported Go value
 // which will be updated to the value of the Param value parsed from args.
 // If a required Param or its' value is not found in args during this Params
-// parsing an ErrValueRequired will be returned.
+// parsing an error is returned.
 //
 // If Param is not marked as required, specifying a pointer to a supported Go
 // value via value parameter is optional:
 // If nil, a value for the Param will not be parsed from args.
-// If a pointer to a supported Go value the Param when parsed will look for an
-// optional Param value - and return ErrValueRequired if not found.
+// If a pointer to a supported Go value the parser will look for an value
+// following the param and return an error if not found.
+//
+// If an error occurs Param is not registered.
 func (p *Params) AddParam(long, short, help string, required bool, value interface{}) error {
 	return p.addParam(long, short, help, required, false, value)
 }
 
-// AddRawParam registers a Param under specified name which must be unique in
-// Params for a Command which must have a CommandRawFunc handler set.
+// AddRawParam registers a raw Param under specified name which must be unique
+// in Params. Raw params can only be defined after prefixed params, i.e. calls
+// to AddParam after AddRawParam will error.
 //
 // Parsed arguments are applied to raw Params in order as they are defined. If
 // Param value is a pointer to a valid Go value argument will be converted to
