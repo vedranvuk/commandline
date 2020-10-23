@@ -16,92 +16,67 @@ Commands can have Commands of their own allowing for a Command hierarchy.
 Example:
 
 ```go
-// Parsed Param can write directly to a Go value from command line arguments.
-var verbose bool
-var username string
 
-// helptopic will be written during parsing of "help" command as we will define
-// a Param that converts an argument to a Go value.
-// It will be set to "sometopic" after parsing with the commandline shown 
-// below the example.
-var helptopic string
+// Some variables that will receive values.
+var (
+	verbose     bool
+	projectname string
+	projectdir  string
+)
 
-// cmdListUsers is a CommandFunc handler for "users" Command defined on "list" command.
-func cmdListUsers(params *Params) error {
-
-	// Reading a Go value modified by a Param during parsing.
-	if verbose {
-		fmt.Println("I'm way too verbose.")
-	}
-
-	// Accessing a parsed value via Params asserting its' type.
-	username, ok := params.Long("username").Value().(string)
-	if !ok {
-		panic("No way this will happen.")
-	}
-
-	// Reading another modified Go value.
-	log.Printf("User '%s' requested users list.\n", username)
-
-	// Continue processing command line.
+// cmdGlobal gets invoked for "Global params" unnamed function.
+func cmdGlobal(params *Params) error {
+	verbose = params.Parsed("verbose")
 	return nil
 }
 
-// cmdHelp is a CommandRawFunc handler that can process raw arguments.
-func cmdHelp(params []string) error {
-	// Show help based on parsed Param value.
-	fmt.Printf("User requested help on '%s'\n", helptopic)
+// cmdCreate gets invoked for "Create project" command.
+func cmdCreate(params *Params) error {
+	CreateProject(projectname, projectdir)
+	return nil
 }
 
-// Create new Parser instance.
-cl := New()
+// Create new parser. 
+parser := New()
 
-// Root Commands can have a single empty Command name to allow command line to
-// start with Params rather than a Command which can be useful for allowing a
-// "global params" pattern.
-rootcmd, err := cl.AddCommand("", "Global flags.", nil)
+// Register a special "global flags" handler command that is automatically
+// invoken if any of it's flags is specified by command line arguments and
+// skipped if no "global flags" is given in arguments.
+cmd, err := parser.AddCommand("", "Global params", cmdGlobal)
 
-// Register an optional "verbose" Params as global param.
-rootcmd.AddParam("verbose", "v", "Be verbose.", false, &verbose)
+// Register an optional "verbose" param on "global flags" command.
+// It will not write to any Go value as pointer to one is nil.
+cmd.AddParam("verbose", "v", "Be more verbose.", false, nil)
 
-// Register a "list" Command on the empty root Command to allow a Command to
-// follow those "global params".
-listcmd, err := rootcmd.AddCommand("list", "List various items.", nil)
+// Register a sub command for the "global flags" command so it can be invoken
+// via arguments regardless if "global flags" executed.
+cmd, err := cmd.AddCommand("create" "Create a project", cmdCreate)
 
-// Register a "users" Command on the "list" Command. 
-listcmd.AddCommand("users", "List users." cmdListUsers)
+// Add a prefixed parameter to "Create project" command that is required and
+// converts an argument following the param to registered Go value projectname.
+cmd.AddParam("name", "n", "Project name", true, &projectname)
 
-// Register a required Param for the "list" Command.
-listcmd.AddParam("username", "u", "Specify username.", true, &username)
+// Add an optional raw param that isn't prefixed but is instead treated as a
+// param value itself.
+cmd.AddRawParam("directory", "Specify project directory", false, &projectdir)
 
-// Register a command with a raw arguments handler.
-helpcmd, err := cl.AddCommand("help", "Show help, optionally for a command", cmdHelp)
-
-
-// Register an optional raw parameter for "help" Command that specifies topic.
-helpcmd.AddRawParam("command", "Specify command to get help for.", false, &helptopic)
-
-// Parse the command line arguments.
-// Returned error may be one of defined in commandline package denoting a Parse
-// failure or an error returned by one of Command handler functions that aborts
-// further parsing.
-if err := cl.Parse(os.Args[1:]); err != nil {
+// Parse command line.
+if err := parser.Parse(os.Args[1:]); err != nil {
 	log.Fatal(err)
 }
 ```
 
-Valid command line for this example would be: '-v list users --username "foo"'
+Valid command line for this example would be: `-v create --name myproject /home/me/myproject`
 
 To execute the "help" Command: 'help sometopic'
 
 ## Status
 
-Pretty clean, simple, fast and works. Nimble too.
+No API changes except additions planned.
 
 What's left:
 * Specialcasing for JSON values passed via command line. Especially compound types and quoting stuffs.
 * Maybe abstract value parsing with codecs.
-* Make a better printer with functional tab alignment and definitely move it from String().
 
 ## License
 
