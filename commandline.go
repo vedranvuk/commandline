@@ -360,7 +360,7 @@ func (c *Commands) AddCommand(name, help string, f CommandFunc) (*Command, error
 	// a CommandRawFunc handler.
 	if parentcmd, ok := c.parent.(*Command); ok {
 		if parentcmd.Params.hasRawArgs() {
-			return nil, errors.New("commandline: cannot register a sub Command in a Command with raw Params")
+			return nil, errors.New("commandline: cannot register a sub-command in a command with raw params")
 		}
 	}
 
@@ -504,7 +504,7 @@ func newParams(cmd *Command) *Params {
 // Parsed returns if the param under specified name was parsed.
 // If the Param under specified name is not registered, returns false.
 func (p *Params) Parsed(name string) bool {
-	if param, exists := p.shortparams[name]; exists {
+	if param, exists := p.longparams[name]; exists {
 		return param.parsed
 	}
 	return false

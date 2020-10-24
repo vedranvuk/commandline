@@ -274,3 +274,29 @@ func TestCombinedParams(t *testing.T) {
 	}
 
 }
+
+func TestParsed(t *testing.T) {
+
+	cmdTest := func(params *Params) error {
+		if !params.Parsed("one") {
+			t.Fatal("Parsed() failed: prefixed param not marked as parsed.")
+		}
+		if !params.Parsed("two") {
+			t.Fatal("Parsed() failed: raw param not marked as parsed.")
+		}
+		return nil
+	}
+
+	cl := New()
+	cmd, err := cl.AddCommand("parse", "Parse test", cmdTest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := cmd.AddParam("one", "1", "Param one", false, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmd.AddRawParam("two", "Param two", false, nil); err != nil {
+		t.Fatal(err)
+	}
+
+}
