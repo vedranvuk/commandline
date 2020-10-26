@@ -39,9 +39,14 @@ func cmdCreate(params *Params) error {
 // Create new parser. 
 parser := New()
 
+// Parser allows for a single unnamed command in root command definitions to
+// allow the command line not to start with a command but parameters instead.
+// If it is registered it must be the root command of all commands.
+//
 // Register a special "global flags" handler command that is automatically
 // invoken if any of it's flags is specified by command line arguments and
-// skipped if no "global flags" is given in arguments.
+// skipped if no "global flags" is given in arguments and the command line
+// starts with a command.
 cmd, err := parser.AddCommand("", "Global params", cmdGlobal)
 
 // Register an optional "verbose" param on "global flags" command.
@@ -67,8 +72,6 @@ if err := parser.Parse(os.Args[1:]); err != nil {
 ```
 
 Valid command line for this example would be: `-v create --name myproject /home/me/myproject`
-
-To execute the "help" Command: 'help sometopic'
 
 ## Status
 
