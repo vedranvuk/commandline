@@ -623,10 +623,12 @@ func (p *Params) AddParam(long, short, help string, required bool, value interfa
 }
 
 // MustAddParam is like AddParam except the function panics on error.
-func (p *Params) MustAddParam(long, short, help string, required bool, value interface{}) {
+// Returns a Command that the param was added to.
+func (p *Params) MustAddParam(long, short, help string, required bool, value interface{}) *Command {
 	if err := p.AddParam(long, short, help, required, value); err != nil {
 		panic(err)
 	}
+	return p.cmd
 }
 
 // AddRawParam registers a raw Param under specified name which must be unique
@@ -645,10 +647,12 @@ func (p *Params) AddRawParam(name, help string, required bool, value interface{}
 }
 
 // MustAddRawParam is like AddRawParam except the function panics on error.
-func (p *Params) MustAddRawParam(name, help string, required bool, value interface{}) {
+// Returns a Command that the param was added to.
+func (p *Params) MustAddRawParam(name, help string, required bool, value interface{}) *Command {
 	if err := p.AddRawParam(name, help, required, value); err != nil {
 		panic(err)
 	}
+	return p.cmd
 }
 
 // parse parses the Parser args into this Params.
