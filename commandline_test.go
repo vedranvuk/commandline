@@ -300,3 +300,12 @@ func TestParsed(t *testing.T) {
 	}
 
 }
+
+func BenchmarkJsonStringToGoValue(b *testing.B) {
+	in := "foobar"
+	out := ""
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		jsonStringToGoValue(in, &out)
+	}
+}

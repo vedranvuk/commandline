@@ -191,6 +191,7 @@ func printCommands(sb *strings.Builder, commands *Commands, indent int) {
 				}
 			}
 		}
+		sb.WriteString("\n")
 		if len(command.Commands.commandmap) > 0 {
 			printCommands(sb, &command.Commands, indent+1)
 		}
@@ -370,6 +371,16 @@ func (c *Commands) AddCommand(name, help string, f CommandFunc) (*Command, error
 	c.nameindexes = append(c.nameindexes, name)
 
 	return cmd, nil
+}
+
+// MustAddCommand is like AddCommand except the function panics on error.
+// Returns added *Command.
+func (c *Commands) MustAddCommand(name, help string, f CommandFunc) *Command {
+	cmd, err := c.AddCommand(name, help, f)
+	if err != nil {
+		panic(err)
+	}
+	return cmd
 }
 
 // GetCommand returns a *Command by name if found and truth if found.
@@ -611,6 +622,13 @@ func (p *Params) AddParam(long, short, help string, required bool, value interfa
 	return p.addParam(long, short, help, required, false, value)
 }
 
+// MustAddParam is like AddParam except the function panics on error.
+func (p *Params) MustAddParam(long, short, help string, required bool, value interface{}) {
+	if err := p.AddParam(long, short, help, required, value); err != nil {
+		panic(err)
+	}
+}
+
 // AddRawParam registers a raw Param under specified name which must be unique
 // in Params. Raw params can only be defined after prefixed params, i.e. calls
 // to AddParam after AddRawParam will error.
@@ -624,6 +642,13 @@ func (p *Params) AddParam(long, short, help string, required bool, value interfa
 // If an error occurs it is returned and the Param is not registered.
 func (p *Params) AddRawParam(name, help string, required bool, value interface{}) error {
 	return p.addParam(name, "", help, required, true, value)
+}
+
+// MustAddRawParam is like AddRawParam except the function panics on error.
+func (p *Params) MustAddRawParam(name, help string, required bool, value interface{}) {
+	if err := p.AddRawParam(name, help, required, value); err != nil {
+		panic(err)
+	}
 }
 
 // parse parses the Parser args into this Params.
@@ -760,7 +785,6 @@ func stringToGoValue(s string, i interface{}) error {
 
 // jsonStringToGoValue converts a json string to a Go value or returns an error.
 func jsonStringToGoValue(s string, i interface{}) error {
-
 	// Wrap string s into quotes if target is a string
 	// so that unmarshaling succeeds.
 	//
@@ -772,9 +796,7 @@ func jsonStringToGoValue(s string, i interface{}) error {
 	if v.Kind() == reflect.String {
 		s = "\"" + s + "\""
 	}
-	sr := strings.NewReader(s)
-	dec := json.NewDecoder(sr)
-	if err := dec.Decode(i); err != nil {
+	if err := json.NewDecoder(strings.NewReader(s)).Decode(i); err != nil {
 		log.Fatal(err)
 	}
 	return nil
