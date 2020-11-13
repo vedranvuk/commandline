@@ -2,6 +2,7 @@ package commandline
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 )
 
@@ -78,14 +79,11 @@ func TestHandler(t *testing.T) {
 	if err := cmd.AddParam("username2", "u", "Specify username.", true, &username); err == nil {
 		t.Fatal("Failed detecting duplicate Param short name.")
 	}
-	/*
-		if err := cmd.AddRawParam("norawallowed", "Should not register on a Command with a CommandFunc handler.", false, nil); err == nil {
-			t.Fatal("Failed detecting raw param registration on normal handler.")
-		}
-	*/
 
 	cmdListNames := func(Params *Params) error {
-		// fmt.Printf("User '%s' requested names list.\n", username)
+		if testing.Verbose() {
+			fmt.Printf("User '%s' requested names list.\n", username)
+		}
 		return nil
 	}
 	if _, err := cmd.AddCommand("names", "List names.", cmdListNames); err != nil {
@@ -236,13 +234,13 @@ func TestCombinedParams(t *testing.T) {
 	four := ""
 
 	cmdTest := func(params *Params) error {
-		/*
+		if testing.Verbose() {
 			fmt.Println(params.RawArgs())
 			fmt.Println(one)
 			fmt.Println(two)
 			fmt.Println(three)
 			fmt.Println(four)
-		*/
+		}
 		return nil
 	}
 

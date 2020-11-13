@@ -389,6 +389,14 @@ func (c *Commands) GetCommand(name string) (cmd *Command, ok bool) {
 	return
 }
 
+// MustGetCommand is like GetCommand but panics if Command is not found.
+func (c *Commands) MustGetCommand(name string) *Command {
+	if cmd, ok := c.commandmap[name]; ok {
+		return cmd
+	}
+	panic("command '" + name + "' not found")
+}
+
 // parse parses Parser args into this Commands.
 func (c *Commands) parse(cl *Parser) error {
 	arg, kind := cl.arg()
@@ -524,6 +532,10 @@ func (p *Params) Parsed(name string) bool {
 }
 
 // RawValue returns raw string value passed to a param, which could be empty.
+//
+// It will return a non-empty value if param under specified name was
+// registered, accepts an optional or required argument and was parsed from
+// command line arguments.
 func (p *Params) RawValue(name string) string {
 	if param, exists := p.longparams[name]; exists {
 		return param.rawvalue
@@ -532,6 +544,8 @@ func (p *Params) RawValue(name string) string {
 }
 
 // RawArgs returns arguments of raw Params in order as passed on command line.
+// It will be an empty slice if no arguments were passed to the param or the
+// param is not raw type.
 func (p *Params) RawArgs() []string { return p.rawargs }
 
 // hasRawArgs returns if Params contain one or more raw Param instances.
