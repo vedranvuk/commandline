@@ -465,6 +465,18 @@ func (c *Commands) parse(cl *Parser) error {
 	return cmd.Commands.parse(cl)
 }
 
+// parser returns the *Parser this Command is a child of.
+// If it finds no parent it will panic.
+func (c *Commands) parser() *Parser {
+	if cmd, ok := c.parent.(*Command); ok {
+		return cmd.parser()
+	}
+	if p, ok := c.parent.(*Parser); ok {
+		return p
+	}
+	panic("command has no parent parser")
+}
+
 // Param defines a Command parameter contained in a Params.
 type Param struct {
 	// help is the Param help text.
