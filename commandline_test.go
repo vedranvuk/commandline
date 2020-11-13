@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func TestCommandRegistration(t *testing.T) {
+func TestCommands(t *testing.T) {
 	cl := New()
 	root := cl.MustAddCommand("", "", nil)
 	if _, err := cl.AddCommand("", "", nil); err == nil {
@@ -14,9 +14,7 @@ func TestCommandRegistration(t *testing.T) {
 	if _, err := root.AddCommand("", "", nil); err == nil {
 		t.Fatal("Failed detecting empty command name in non-root command.")
 	}
-	if _, err := root.AddCommand("foo", "", nil); err != nil {
-		t.Fatal(err)
-	}
+	root.MustAddCommand("foo", "", nil)
 	if _, err := root.AddCommand("foo", "", nil); err == nil {
 		t.Fatal("Failed detecting duplicate empty root command name.")
 	}
@@ -30,6 +28,27 @@ func TestCommandRegistration(t *testing.T) {
 	}
 	if err := cl.Parse([]string{"--boo", "boo"}); err == nil {
 		t.Fatal("Failed detecting non-existent empty root command param.")
+	}
+	if err := cl.Parse([]string{"boo"}); err == nil {
+		t.Fatal("failed detecting non-existent command")
+	}
+}
+
+func TestGlobal(t *testing.T) {
+	cl := New()
+	if err := cl.Parse([]string{"--verbose"}); err == nil {
+		t.Fatal("failed detecting command not specified")
+	}
+	if err := cl.Parse([]string{"verbose"}); err == nil {
+		t.Fatal("failed detecting unregistered command")
+	}
+	cl.MustAddCommand("", "", nil).MustAddParam("verbose", "v", "", false, nil)
+	if err := cl.Parse([]string{"--verbose"}); err != nil {
+		t.Fatal(err)
+	}
+	cl.MustAddCommand("foo", "", nil)
+	if err := cl.Parse([]string{"--verbose", "foo"}); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -141,7 +160,8 @@ func TestPrefixed(t *testing.T) {
 		t.Fatal("Failed detecting invalid registration of required prefixed param with invalid value.")
 	}
 	cmd.MustAddParam("bar", "r", "", true, &barv).
-		MustAddParam("baz", "z", "", false, nil)
+		MustAddParam("baz", "z", "", false, nil).
+		MustAddParam("bat", "t", "", false, nil)
 	if err := cmd.AddParam("boo", "", "", true, &barv); err == nil {
 		t.Fatal("Failed detecting invalid registration of required prefixed param after optional prefixed param.")
 	}
@@ -166,6 +186,12 @@ func TestPrefixed(t *testing.T) {
 	if err := cl.Parse([]string{"foo", "--baz"}); err == nil {
 		t.Fatal("Failed detecting required params not specified.")
 	}
+	if err := cl.Parse([]string{"foo", "--bar", "bar", "--baz", "boo"}); err == nil {
+		t.Fatal("Failed detecting required params not specified.")
+	}
+	if err := cl.Parse([]string{"foo", "--bar", "bar", "--baz", "--bat", "boo"}); err == nil {
+		t.Fatal("Failed detecting extra arguments.")
+	}
 }
 
 func TestPrefixedRequired(t *testing.T) {
@@ -185,7 +211,7 @@ func TestPrefixedRequired(t *testing.T) {
 	}
 }
 
-func TestCombined(t *testing.T) {
+func TestPrefixedShort(t *testing.T) {
 	cl := New()
 	var valFilip string
 	root := cl.MustAddCommand("foo", "", nil).
@@ -224,5 +250,33 @@ func TestCombined(t *testing.T) {
 	}
 	if err := cl.Parse([]string{"foo", "-abcdef", "filip"}); err == nil {
 		t.Fatal("Failed detecting short param with required value being combined.")
+	}
+}
+
+func TestCombined(t *testing.T) {
+	cl := New()
+	var valBar, valBit string
+	cl.MustAddCommand("foo", "", nil).
+		MustAddParam("bar", "", "", true, &valBar).
+		MustAddParam("baz", "", "", false, nil).
+		MustAddRawParam("bit", "", true, &valBit).
+		MustAddRawParam("bot", "", false, nil)
+	if err := cl.Parse([]string{"foo", "--bar", "bar", "bit"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := cl.Parse([]string{"foo", "--bar", "bar", "bit", "bot"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := cl.Parse([]string{"foo", "--bar", "bar"}); err == nil {
+		t.Fatal("Failed detecting missing required argument to raw param with required value.")
+	}
+	if err := cl.Parse([]string{"foo", "--bar", "bar", "--baz", "bit"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := cl.Parse([]string{"foo", "--bar", "bar", "--baz", "bit", "bot"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := cl.Parse([]string{"foo", "--bar", "bar", "--baz", "bit", "bot", "boo"}); err == nil {
+		t.Fatal("Failed detecting extra argument to optional prefixed long param without required value.")
 	}
 }
