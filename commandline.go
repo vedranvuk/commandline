@@ -455,6 +455,8 @@ type Param struct {
 	help string
 	// required specifies if this Param is required.
 	required bool
+	// rawvalue is the raw parsed param value, possibly empty.
+	rawvalue string
 	// value is a pointer to a Go value which is set
 	// from parsed Param value if not nil and  points to a
 	// valid target.
@@ -519,6 +521,14 @@ func (p *Params) Parsed(name string) bool {
 		return param.parsed
 	}
 	return false
+}
+
+// RawValue returns raw string value passed to a param, which could be empty.
+func (p *Params) RawValue(name string) string {
+	if param, exists := p.longparams[name]; exists {
+		return param.rawvalue
+	}
+	return ""
 }
 
 // RawArgs returns arguments of raw Params in order as passed on command line.
@@ -704,12 +714,14 @@ func (p *Params) parse(cl *Parser, cmd *Command) error {
 
 			// Store remaining arguments and parse them into defined Params.
 			p.rawargs = append(p.rawargs, cl.args...)
+			var par *Param
 			for ; i < len(p.longindexes); i++ {
-				par := p.longparams[p.longindexes[i]]
+				par = p.longparams[p.longindexes[i]]
 				if par.value != nil {
 					if err := stringToGoValue(cl.peek(), par.value); err != nil {
 						return err
 					}
+					par.rawvalue = cl.peek()
 				}
 				par.parsed = true
 				if !cl.next() {
@@ -767,6 +779,7 @@ func (p *Params) parse(cl *Parser, cmd *Command) error {
 			if err := stringToGoValue(value, param.value); err != nil {
 				return err
 			}
+			param.rawvalue = value
 		}
 		if !cl.next() {
 			return nil

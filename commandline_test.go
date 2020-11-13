@@ -309,3 +309,18 @@ func BenchmarkJsonStringToGoValue(b *testing.B) {
 		jsonStringToGoValue(in, &out)
 	}
 }
+
+func TestRawParam(t *testing.T) {
+	h := func(params *Params) error {
+		if params.RawValue("test") != "test" {
+			t.Fatal("RawValue failed.")
+		}
+		return nil
+	}
+	var test string
+	cl := New()
+	cl.MustAddCommand("test", "", h).MustAddParam("test", "t", "", true, &test)
+	if err := cl.Parse([]string{"test", "--test", "test"}); err != nil {
+		t.Fatal(err)
+	}
+}
