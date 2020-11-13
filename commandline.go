@@ -105,6 +105,10 @@ type Parser struct {
 	// and Params down the Parse chain until exhausted or an error occurs
 	// using peek(), arg() and next().
 	args []string
+	// cmds is a slice of commands with an assigned handler invoked via
+	// command line in parse order. Used to track the command execution
+	// order and execute only the last parsed Command.
+	cmds []*Command
 	// Commands is the root command set.
 	//
 	// Root Commands as an exception allows a single Command
@@ -133,7 +137,10 @@ func (p *Parser) Parse(args []string) error {
 }
 
 // reset resets any set states prior to parsing.
-func (p *Parser) reset() { resetParams(&p.Commands) }
+func (p *Parser) reset() {
+	p.cmds = []*Command{}
+	resetParams(&p.Commands)
+}
 
 // resetParams recursively resets all Params in Commands.
 func resetParams(c *Commands) {
@@ -142,6 +149,7 @@ func resetParams(c *Commands) {
 		if len(cmd.Params.longparams) > 0 {
 			for _, p := range cmd.Params.longparams {
 				p.parsed = false
+				p.rawvalue = ""
 			}
 		}
 		resetParams(&cmd.Commands)
