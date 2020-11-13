@@ -351,14 +351,12 @@ func newCommands(parent interface{}) *Commands {
 //
 // If a registration error occurs it is returned with a nil *Command.
 func (c *Commands) AddCommand(name, help string, f CommandFunc) (*Command, error) {
-
 	// Allow empty Command name only in root.
 	if name == "" {
 		if _, ok := c.parent.(*Parser); !ok {
 			return nil, ErrInvalidName
 		}
 	}
-
 	// No duplicate names.
 	if _, exists := c.commandmap[name]; exists {
 		if name == "" {
@@ -366,7 +364,6 @@ func (c *Commands) AddCommand(name, help string, f CommandFunc) (*Command, error
 		}
 		return nil, errors.New("commandline: duplicate name '" + name + "'")
 	}
-
 	// Disallow adding sub-Commands to a Command that has
 	// a CommandRawFunc handler.
 	if parentcmd, ok := c.parent.(*Command); ok {
@@ -374,12 +371,10 @@ func (c *Commands) AddCommand(name, help string, f CommandFunc) (*Command, error
 			return nil, errors.New("commandline: cannot register a sub-command in a command with raw params")
 		}
 	}
-
 	// Define and add a new Command to self.
 	cmd := newCommand(c, help, f)
 	c.commandmap[name] = cmd
 	c.nameindexes = append(c.nameindexes, name)
-
 	return cmd, nil
 }
 
@@ -459,7 +454,6 @@ func (c *Commands) parse(cl *Parser) error {
 	if p := c.parser(); true {
 		p.cmds = append(p.cmds, cmd)
 	}
-	// TODO Fix unnamed root command.
 	// Repeat parse on these Commands if "global params"
 	// empty Command name container was invoken.
 	if global {

@@ -2,18 +2,47 @@
 
 A command oriented command line parser.
 
-Currently uses JSON by default to allow string to value conversion from arguments.
-
 ## Description
 
-Commands can be defined in the central Parser type and handler functions of 
-those commands are invoked when Command is specified on command line, which can
-optionally abort the parse process. Command can have optional or required 
-Param definitions which can write directly to Go values during parsing using 
-JSON formatting and can also be analyzed in a Command handler function.
+Central Parser type registers Commands with Handlers. Command can have optional 
+or required Param definitions which can write directly to Go values and be
+analyzed in a Handler.
+
 Commands can have Commands of their own allowing for a Command hierarchy.
 
-Example:
+Params can be Prefixed (specified by name) or Raw (specified by index and 
+addressable by name).
+
+Example with panic functions:
+
+```go
+// New parser.
+cl := New()
+// To store value parsed for foo's bar param.
+var barVal string
+// Add a special unnamed command to root to hold 'global' params.
+// Directly register a 'verbose' param on it. 
+cl.MustAddCommand("", "", nil).MustAddParam("verbose", "v", "Verbose output.", false, nil)
+// Add a 'foo' command and directly register a 'bar' prefixed param on it.
+cl.MustAddCommand("foo", "Do the foo.", nil).MustAddParam("bar", "r", "Enable bar.", true, &barVal)
+// Add a 'baz' command and directly register a 'bat' raw param on it.
+cl.MustAddCommand("baz", "Do the baz.", nil).MustAddRawParam("bat", "Enable bat.", false, nil)
+// Parse global verbose flag, execute 'foo' command and pass it '--bar' param 
+// with value 'bar' that is written to &barVal, execute baz command and read 
+// 'bat' as its' bat param value.
+cl.Parse([]string{"--verbose", "foo", "--bar", "bar", "baz", "bat"})
+fmt.Println(cl.Print())
+// Output:
+// --verbose       -v      Verbose output.
+
+// foo     Do the foo.
+//         --bar   -r      (string)        Enable bar.
+
+// baz     Do the baz.
+//         [bat]           Enable bat.
+```
+
+Example with error functions:
 
 ```go
 
@@ -75,11 +104,14 @@ Valid command line for this example would be: `-v create --name myproject /home/
 
 ## Status
 
-No API changes except additions planned.
+Working as intended. No API changes except additions planned.
 
 What's left:
-* Specialcasing for JSON values passed via command line. Especially compound types and quoting stuffs.
+* Reflect incomming, will replace JSON with a light string converter.
 * Maybe abstract value parsing with codecs.
+* Maybe support complex structures as parameters.
+* Maybe add a reflector from Go composites to preconstructed Parser.
+* Maybe go:generate command handlers from a Parser instance.
 
 ## License
 

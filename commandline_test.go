@@ -2,6 +2,7 @@ package commandline
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 )
 
@@ -36,6 +37,9 @@ func TestCommands(t *testing.T) {
 
 func TestGlobal(t *testing.T) {
 	cl := New()
+	barCmd := func(params *Params) error {
+		return nil
+	}
 	if err := cl.Parse([]string{"--verbose"}); err == nil {
 		t.Fatal("failed detecting command not specified")
 	}
@@ -47,7 +51,11 @@ func TestGlobal(t *testing.T) {
 		t.Fatal(err)
 	}
 	cl.MustAddCommand("foo", "", nil)
-	if err := cl.Parse([]string{"--verbose", "foo"}); err != nil {
+	if err := cl.Parse([]string{"--verbose", "foo"}); err == nil {
+		t.Fatal("Failed detecting command with no handler.")
+	}
+	cl.MustAddCommand("bar", "", barCmd)
+	if err := cl.Parse([]string{"--verbose", "bar"}); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -279,4 +287,34 @@ func TestCombined(t *testing.T) {
 	if err := cl.Parse([]string{"foo", "--bar", "bar", "--baz", "bit", "bot", "boo"}); err == nil {
 		t.Fatal("Failed detecting extra argument to optional prefixed long param without required value.")
 	}
+}
+
+func BenchmarkParser(b *testing.B) {
+	cl := New()
+	var barVal string
+	cl.MustAddCommand("", "", nil).MustAddParam("verbose", "v", "Verbose output.", false, nil)
+	cl.MustAddCommand("foo", "Do the foo.", nil).MustAddParam("bar", "r", "Enable bar.", true, &barVal)
+	cl.MustAddCommand("baz", "Do the baz.", nil).MustAddRawParam("bat", "Enable bat.", false, nil)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		cl.Parse([]string{"--verbose", "foo", "--bar", "bar", "baz", "bat"})
+	}
+}
+
+func ExampleParser() {
+	cl := New()
+	var barVal string
+	cl.MustAddCommand("", "", nil).MustAddParam("verbose", "v", "Verbose output.", false, nil)
+	cl.MustAddCommand("foo", "Do the foo.", nil).MustAddParam("bar", "r", "Enable bar.", true, &barVal)
+	cl.MustAddCommand("baz", "Do the baz.", nil).MustAddRawParam("bat", "Enable bat.", false, nil)
+	cl.Parse([]string{"--verbose", "foo", "--bar", "bar", "baz", "bat"})
+	fmt.Println(cl.Print())
+	// Output:
+	// --verbose       -v      Verbose output.
+
+	// foo     Do the foo.
+	//         --bar   -r      (string)        Enable bar.
+
+	// baz     Do the baz.
+	//         [bat]           Enable bat.
 }
