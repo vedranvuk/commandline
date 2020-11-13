@@ -128,32 +128,17 @@ func New() *Parser {
 // it is returned. Returns ErrNoArgs if args are empty and there are defined
 // Commands or Params.
 func (p *Parser) Parse(args []string) error {
-	if len(p.Commands.commandmap) > 0 && len(args) == 0 {
-		return ErrNoArgs
-	}
 	p.args = args
 	p.reset()
 	return p.Commands.parse(p)
 }
 
-// reset resets any set states prior to parsing.
-func (p *Parser) reset() {
-	p.cmds = []*Command{}
-	resetParams(&p.Commands)
-}
-
-// resetParams recursively resets all Params in Commands.
-func resetParams(c *Commands) {
-	for _, cmd := range c.commandmap {
-		cmd.Params.rawargs = []string{}
-		if len(cmd.Params.longparams) > 0 {
-			for _, p := range cmd.Params.longparams {
-				p.parsed = false
-				p.rawvalue = ""
-			}
-		}
-		resetParams(&cmd.Commands)
-	}
+// Print prints the Parser as currently configured.
+// Returns output suitable for terminal display.
+func (p Parser) Print() string {
+	sb := &strings.Builder{}
+	printCommands(sb, &p.Commands, 0)
+	return sb.String()
 }
 
 // printCommands is a recursive printer or registered Commands and Params.
@@ -206,12 +191,24 @@ func printCommands(sb *strings.Builder, commands *Commands, indent int) {
 	}
 }
 
-// Print prints the Parser as currently configured.
-// Returns output suitable for terminal display.
-func (p Parser) Print() string {
-	sb := &strings.Builder{}
-	printCommands(sb, &p.Commands, 0)
-	return sb.String()
+// reset resets any set states prior to parsing.
+func (p *Parser) reset() {
+	p.cmds = []*Command{}
+	resetParams(&p.Commands)
+}
+
+// resetParams recursively resets all Params in Commands.
+func resetParams(c *Commands) {
+	for _, cmd := range c.commandmap {
+		cmd.Params.rawargs = []string{}
+		if len(cmd.Params.longparams) > 0 {
+			for _, p := range cmd.Params.longparams {
+				p.parsed = false
+				p.rawvalue = ""
+			}
+		}
+		resetParams(&cmd.Commands)
+	}
 }
 
 // argKind defines argument kind.
@@ -299,6 +296,7 @@ func (p *Parser) next() bool {
 // further down the Commands chain. It can have zero or more defined
 // Param instances in its' Params.
 type Command struct {
+	parent *Commands
 	// help is the Command help text.
 	help string
 	// f is the function to invoke when this Command is executed.
@@ -310,10 +308,11 @@ type Command struct {
 }
 
 // newCommand returns a new *Command instance with given help and handler.
-func newCommand(help string, f CommandFunc) *Command {
+func newCommand(parent *Commands, help string, f CommandFunc) *Command {
 	p := &Command{
-		help: help,
-		f:    f,
+		parent: parent,
+		help:   help,
+		f:      f,
 	}
 	p.Params = *newParams(p)
 	p.Commands = *newCommands(p)
@@ -362,6 +361,9 @@ func (c *Commands) AddCommand(name, help string, f CommandFunc) (*Command, error
 
 	// No duplicate names.
 	if _, exists := c.commandmap[name]; exists {
+		if name == "" {
+			return nil, errors.New("commandline: duplicate empty root command")
+		}
 		return nil, errors.New("commandline: duplicate name '" + name + "'")
 	}
 
@@ -374,7 +376,7 @@ func (c *Commands) AddCommand(name, help string, f CommandFunc) (*Command, error
 	}
 
 	// Define and add a new Command to self.
-	cmd := newCommand(help, f)
+	cmd := newCommand(c, help, f)
 	c.commandmap[name] = cmd
 	c.nameindexes = append(c.nameindexes, name)
 
@@ -407,14 +409,24 @@ func (c *Commands) MustGetCommand(name string) *Command {
 
 // parse parses Parser args into this Commands.
 func (c *Commands) parse(cl *Parser) error {
-	arg, kind := cl.arg()
-	// Arguments exhausted.
-	if kind == argNone {
-		return nil
-	}
 	var cmd *Command
-	var exists bool
-	var global bool
+	var exists, global bool
+	arg, kind := cl.arg()
+	// All arguments exhausted, nothing left to parse.
+	if kind == argNone {
+		// Execute last matched Command.
+		if p := c.parser(); len(p.cmds) > 0 {
+			// If Command has handler propagate its result.
+			if cmd = p.cmds[len(p.cmds)-1]; cmd.f != nil {
+				return cmd.f(&cmd.Params)
+			}
+			// Otherwise return success as command
+			// was a params with values placeholder.
+			return nil
+		}
+		// Otherwise, nothing was matched so far.
+		return ErrNoArgs
+	}
 	if kind != argCommandOrRaw {
 		// Arg is not a Command, but a Param. See if a
 		// special case of single unnamed root command.
@@ -424,7 +436,18 @@ func (c *Commands) parse(cl *Parser) error {
 		}
 		global = true
 	} else {
-		// Arg is a Command.
+		// If no commands are defined on this command and it has no params
+		// defined execute the last command as a raw param handler.
+		if len(c.commandmap) == 0 {
+			// Get last matched Command and execute it.
+			if p := c.parser(); len(p.cmds) > 0 {
+				if cmd = p.cmds[len(p.cmds)-1]; cmd.f != nil {
+					return cmd.f(&cmd.Params)
+				}
+				return nil
+			}
+		}
+		// Arg should otherwise be an existing Command.
 		cmd, exists = c.commandmap[arg]
 		if !exists {
 			return errors.New("commandline: command '" + arg + "' not found")
@@ -448,11 +471,9 @@ func (c *Commands) parse(cl *Parser) error {
 		}
 	}
 
-	// Execute Command.
-	if cmd.f != nil {
-		if err := cmd.f(&cmd.Params); err != nil {
-			return err
-		}
+	// Append command to matched commands.
+	if p := c.parser(); true {
+		p.cmds = append(p.cmds, cmd)
 	}
 
 	// Repeat parse on these Commands if "global params"
@@ -465,16 +486,15 @@ func (c *Commands) parse(cl *Parser) error {
 	return cmd.Commands.parse(cl)
 }
 
-// parser returns the *Parser this Command is a child of.
-// If it finds no parent it will panic.
+// parser help.
 func (c *Commands) parser() *Parser {
 	if cmd, ok := c.parent.(*Command); ok {
-		return cmd.parser()
+		return cmd.parent.parser()
 	}
 	if p, ok := c.parent.(*Parser); ok {
 		return p
 	}
-	panic("command has no parent parser")
+	panic("commands have no parent parser")
 }
 
 // Param defines a Command parameter contained in a Params.
@@ -505,14 +525,14 @@ func newParam(help string, required, raw bool, value interface{}) *Param {
 	}
 }
 
+// Value returns the Param value.
+func (p *Param) Value() interface{} { return p.value }
+
 // nameToParam maps a param name to *Param.
 type nameToParam map[string]*Param
 
 // nameToName maps a long param name to short param name.
 type nameToName map[string]string
-
-// Value returns the Param value.
-func (p *Param) Value() interface{} { return p.value }
 
 // A Params defines a set of Command Params unique by long name.
 type Params struct {
@@ -540,6 +560,59 @@ func newParams(cmd *Command) *Params {
 		[]string{},
 		[]string{},
 	}
+}
+
+// AddParam registers a new Param in these Params.
+//
+// Long param name is required, short is optional and can be empty, as is help.
+//
+// If required is specified value must be a pointer to a supported Go value
+// which will be updated to a value parsed from an argument following param.
+// If a required Param or its' value is not found in command line args an error
+// is returned.
+//
+// If Param is not marked as required, specifying a value parameter is optional
+// but dictates that:
+// If nil, a value for the Param will not be parsed from args.
+// If valid, the parser will parse the argument following the Param into it.
+//
+// If an error occurs Param is not registered.
+func (p *Params) AddParam(long, short, help string, required bool, value interface{}) error {
+	return p.addParam(long, short, help, required, false, value)
+}
+
+// MustAddParam is like AddParam except the function panics on error.
+// Returns a Command that the param was added to.
+func (p *Params) MustAddParam(long, short, help string, required bool, value interface{}) *Command {
+	if err := p.AddParam(long, short, help, required, value); err != nil {
+		panic(err)
+	}
+	return p.cmd
+}
+
+// AddRawParam registers a raw Param under specified name which must be unique
+// in long Params names. Raw params can only be defined after prefixed params
+// or only raw params. Calls to AddParam after AddRawParam will error.
+//
+// Parsed arguments are applied to raw Params in order as they are defined. If
+// value is a pointer to a valid Go value argument will be converted to
+// that Go value. Specifying a value is optional and if nil, parsed argument
+// will not be parsed into the value.
+//
+// A single non-required raw Param is allowed and it must be the last one.
+//
+// If an error occurs it is returned and the Param is not registered.
+func (p *Params) AddRawParam(name, help string, required bool, value interface{}) error {
+	return p.addParam(name, "", help, required, true, value)
+}
+
+// MustAddRawParam is like AddRawParam except the function panics on error.
+// Returns a Command that the param was added to.
+func (p *Params) MustAddRawParam(name, help string, required bool, value interface{}) *Command {
+	if err := p.AddRawParam(name, help, required, value); err != nil {
+		panic(err)
+	}
+	return p.cmd
 }
 
 // Parsed returns if the param under specified name was parsed.
@@ -592,14 +665,13 @@ func (p *Params) addParam(long, short, help string, required, raw bool, value in
 		return errors.New("commandline: duplicate name '" + long + "'")
 	}
 
-	// No short duplicates.
-	if _, exists := p.shortparams[short]; exists {
+	// No short duplicates if not empty.
+	if _, exists := p.shortparams[short]; exists && short != "" {
 		return errors.New("commandline: duplicate name '" + short + "'")
 	}
 
 	// Continuity checks, if any definitions exist.
 	if lp := p.last(); lp != nil {
-
 		if lp.raw {
 			if !raw {
 				return errors.New("commandline: cannot register a non-raw param after a raw param")
@@ -607,15 +679,21 @@ func (p *Params) addParam(long, short, help string, required, raw bool, value in
 			if !lp.required && !required {
 				return errors.New("commandline: cannot add more than one optional parameter")
 			}
-			if !lp.required && required && !raw {
+			if !lp.required && required {
 				return errors.New("commandline: cannot add a required parameter after a non-required parameter")
+			}
+		} else {
+			if !raw {
+				if !lp.required && required {
+					return errors.New("commandline: cannot add a required parameter after a non-required parameter")
+				}
 			}
 		}
 	}
 
-	// Required params need a valid Go value.
+	// Required params, except raw params need a valid Go value.
 	if value == nil {
-		if required {
+		if required && !raw {
 			return errors.New("commandline: value required")
 		}
 	} else {
@@ -625,6 +703,12 @@ func (p *Params) addParam(long, short, help string, required, raw bool, value in
 			return ErrInvalidValue
 		}
 	}
+	/*
+		// If value was specified, must be a valid pointer to a Go value.
+		if v := reflect.ValueOf(value); v.IsValid()  v.Kind() != reflect.Ptr {
+			return ErrInvalidValue
+		}
+	*/
 
 	// Add a new param.
 	param := newParam(help, required, raw, value)
@@ -644,59 +728,6 @@ func (p *Params) last() *Param {
 		return nil
 	}
 	return p.longparams[p.longindexes[len(p.longindexes)-1]]
-}
-
-// AddParam registers a new Param in these Params.
-//
-// Long param name is required, short is optional and can be empty, as is help.
-//
-// If required is specified value must be a pointer to a supported Go value
-// which will be updated to the value of the Param value parsed from args.
-// If a required Param or its' value is not found in args during this Params
-// parsing an error is returned.
-//
-// If Param is not marked as required, specifying a pointer to a supported Go
-// value via value parameter is optional:
-// If nil, a value for the Param will not be parsed from args.
-// If a pointer to a supported Go value the parser will look for an value
-// following the param and return an error if not found.
-//
-// If an error occurs Param is not registered.
-func (p *Params) AddParam(long, short, help string, required bool, value interface{}) error {
-	return p.addParam(long, short, help, required, false, value)
-}
-
-// MustAddParam is like AddParam except the function panics on error.
-// Returns a Command that the param was added to.
-func (p *Params) MustAddParam(long, short, help string, required bool, value interface{}) *Command {
-	if err := p.AddParam(long, short, help, required, value); err != nil {
-		panic(err)
-	}
-	return p.cmd
-}
-
-// AddRawParam registers a raw Param under specified name which must be unique
-// in Params. Raw params can only be defined after prefixed params, i.e. calls
-// to AddParam after AddRawParam will error.
-//
-// Parsed arguments are applied to raw Params in order as they are defined. If
-// Param value is a pointer to a valid Go value argument will be converted to
-// that Go value.
-//
-// A single non-required raw Param is allowed and it must be the last one.
-//
-// If an error occurs it is returned and the Param is not registered.
-func (p *Params) AddRawParam(name, help string, required bool, value interface{}) error {
-	return p.addParam(name, "", help, required, true, value)
-}
-
-// MustAddRawParam is like AddRawParam except the function panics on error.
-// Returns a Command that the param was added to.
-func (p *Params) MustAddRawParam(name, help string, required bool, value interface{}) *Command {
-	if err := p.AddRawParam(name, help, required, value); err != nil {
-		panic(err)
-	}
-	return p.cmd
 }
 
 // parse parses the Parser args into this Params.
@@ -755,9 +786,9 @@ func (p *Params) parse(cl *Parser, cmd *Command) error {
 					if err := stringToGoValue(cl.peek(), par.value); err != nil {
 						return err
 					}
-					par.rawvalue = cl.peek()
 				}
 				par.parsed = true
+				par.rawvalue = cl.peek()
 				if !cl.next() {
 					if par = p.last(); par != nil && par.required && len(p.longindexes)-1 > i {
 						return errors.New("commandline: required parameter '" + p.longindexes[i+1] + "' not specified")
@@ -768,7 +799,7 @@ func (p *Params) parse(cl *Parser, cmd *Command) error {
 
 			// Throw error if extra arguments are passed.
 			if len(cl.args) > 0 {
-				return errors.New("commandline: extra args specified: " + strings.Join(cl.args, " "))
+				return errors.New("commandline: extra arguments specified: '" + strings.Join(cl.args, " ") + "'")
 			}
 			return nil
 
@@ -805,13 +836,15 @@ func (p *Params) parse(cl *Parser, cmd *Command) error {
 		}
 
 		// Set value of normal Param if required.
-		if kind != argComb && param.value != nil {
+		if kind != argComb && param.value != nil || param.raw {
 			if !cl.next() {
 				return errors.New("commandline: param '" + p.longindexes[i] + "' requires a value")
 			}
 			value, _ := cl.arg()
-			if err := stringToGoValue(value, param.value); err != nil {
-				return err
+			if param.value != nil {
+				if err := stringToGoValue(value, param.value); err != nil {
+					return err
+				}
 			}
 			param.rawvalue = value
 		}

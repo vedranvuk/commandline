@@ -2,323 +2,224 @@ package commandline
 
 import (
 	"errors"
-	"fmt"
 	"testing"
 )
 
-func TestHandler(t *testing.T) {
-
-	cmdGlobalFlags := func(params *Params) error {
-		return nil
-	}
-
-	cmdDelete := func(params *Params) error {
-		return nil
-	}
-
+func TestCommandRegistration(t *testing.T) {
 	cl := New()
-	cmd, err := cl.AddCommand("", "Global flags.", cmdGlobalFlags)
-	if err != nil {
+	root := cl.MustAddCommand("", "", nil)
+	if _, err := cl.AddCommand("", "", nil); err == nil {
+		t.Fatal("Failed detecting duplicate empty root command.")
+	}
+	if _, err := root.AddCommand("", "", nil); err == nil {
+		t.Fatal("Failed detecting empty command name in non-root command.")
+	}
+	if _, err := root.AddCommand("foo", "", nil); err != nil {
 		t.Fatal(err)
 	}
-
-	if c, ok := cl.GetCommand(""); !ok {
-		t.Fatal("GetCommand failed to find a command.")
-	} else {
-		if c != cmd {
-			t.Fatal("GetCommand returned the wrong Command.")
-		}
+	if _, err := root.AddCommand("foo", "", nil); err == nil {
+		t.Fatal("Failed detecting duplicate empty root command name.")
 	}
-
-	if err := cmd.AddParam("verbose", "v", "Enable verbose output.", false, nil); err != nil {
+	var fooval string
+	root.MustAddParam("foo", "", "", true, &fooval)
+	if err := cl.Parse([]string{"--foo", "foo"}); err != nil {
 		t.Fatal(err)
 	}
-
-	cmd, err = cl.AddCommand("delete", "Delete all files at specified path.", cmdDelete)
-	if err != nil {
-		t.Fatal(err)
+	if err := cl.Parse([]string{"--boo"}); err == nil {
+		t.Fatal("Failed detecting non-existent empty root command param.")
 	}
-	cmd.AddParam("path", "p", "Path to target.", false, nil)
-	cmd.AddParam("recursive", "r", "Recursively delete all files in subfolders.", false, nil)
-
-	cmd, err = cl.AddCommand("list", "List items.", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if _, err = cl.AddCommand("list", "This duplicate must not register.", nil); err == nil {
-		t.Fatal("Failed detecting adding a command with a duplicate name.")
-	}
-
-	if _, err := cmd.AddCommand("", "This must not register", nil); err != ErrInvalidName {
-		t.Fatal("Failed detecting registering an empty command in a sub-Command.")
-	}
-
-	if err := cmd.AddParam("all", "a", "List all items.", false, nil); err != nil {
-		t.Fatal(err)
-	}
-	if err := cmd.AddParam("color", "c", "Use color when listing.", false, nil); err != nil {
-		t.Fatal(err)
-	}
-	username := ""
-	if err := cmd.AddParam("u", "username", "Specify username.", true, &username); err == nil {
-		t.Fatal("Failed detecting param short name length.")
-	}
-	if err := cmd.AddParam("username", "u", "Specify username.", true, nil); err == nil {
-		t.Fatal("Failed detecting required value for a required parameter.")
-	}
-	if err := cmd.AddParam("username", "u", "Specify username.", true, "nope"); err == nil {
-		t.Fatal("Failed detecting required value type for a required parameter.")
-	}
-	if err := cmd.AddParam("username", "u", "Specify username.", true, &username); err != nil {
-		t.Fatal(err)
-	}
-	if err := cmd.AddParam("username", "u", "Specify username.", true, &username); err == nil {
-		t.Fatal("Failed detecting duplicate Param long name.")
-	}
-	if err := cmd.AddParam("username2", "u", "Specify username.", true, &username); err == nil {
-		t.Fatal("Failed detecting duplicate Param short name.")
-	}
-
-	cmdListNames := func(Params *Params) error {
-		if testing.Verbose() {
-			fmt.Printf("User '%s' requested names list.\n", username)
-		}
-		return nil
-	}
-	if _, err := cmd.AddCommand("names", "List names.", cmdListNames); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := cl.Parse([]string{}); err != ErrNoArgs {
-		t.Fatal("Failed detecting no args.")
-	}
-
-	if err := cl.Parse([]string{""}); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := cl.Parse([]string{"list", "-acu", "foo bar"}); err == nil {
-		t.Fatal("Failed detecting combined param with required value.")
-	}
-
-	if err := cl.Parse([]string{"list", "--username"}); err == nil {
-		t.Fatal("Failed detecting required Param value.")
-	}
-
-	if err := cl.Parse([]string{"nosuchcommand"}); err == nil {
-		t.Fatal("Failed detecting non-existent command.")
-	}
-
-	if err := cl.Parse([]string{"--nosuchparam"}); err == nil {
-		t.Fatal("Failed detecting non-existent param.")
-	}
-
-	if err := cl.Parse([]string{"-v", "list", "-ac", "-u", "foo", "--whatnow"}); err == nil {
-		t.Fatal("Failed detecting non-existent parameter.")
-	}
-
-	if err := cl.Parse([]string{"--verbose", "list", "-ac", "names"}); err == nil {
-		t.Fatal("Failed detecting required Param.")
-	}
-
-	if err := cl.Parse([]string{"list", "-x"}); err == nil {
-		t.Fatal("Failed detecting non-existent short parameter.")
-	}
-
-	if err := cl.Parse([]string{"list", "-acx"}); err == nil {
-		t.Fatal("Failed detecting non-existent combined short parameter.")
-	}
-
-	if err := cl.Parse([]string{"--verbose", "list", "-ac", "--username", "foo bar", "names"}); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := cl.Parse([]string{"-v", "list", "--all", "-c", "-u", "foo bar", "names"}); err != nil {
-		t.Fatal(err)
-	}
-
-}
-
-func TestRegisteredRaw(t *testing.T) {
-
-	testparams := []string{"one", "two", "three"}
-
-	handler := func(params *Params) error {
-		for idx, val := range params.RawArgs() {
-			if testparams[idx] != val {
-				t.Fatal("TestCustomHandler failed")
-			}
-		}
-		return nil
-	}
-
-	cl := New()
-	cmd, err := cl.AddCommand("test", "", handler)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	one := ""
-	two := ""
-	three := ""
-
-	if err := cmd.AddRawParam("One", "First parameter", true, &one); err != nil {
-		t.Fatal(err)
-	}
-	if err := cmd.AddRawParam("Two", "Second parameter", true, &two); err != nil {
-		t.Fatal(err)
-	}
-	if err := cmd.AddRawParam("Three", "Third parameter", false, nil); err != nil {
-		t.Fatal(err)
-	}
-	if err := cmd.AddRawParam("Fourth", "Fourth parameter", true, nil); err == nil {
-		t.Fatal("Allowed registration of required parameter after non-required parameter")
-	}
-	if err := cmd.AddRawParam("Fourth", "Fourth parameter", false, nil); err == nil {
-		t.Fatal("Allowed registration of non-required parameter after non-required parameter")
-	}
-
-	if err := cl.Parse([]string{"--nonexistentparam"}); err == nil {
-		t.Fatal("Failed detecting a non-global param.")
-	}
-
-	if err := cl.Parse(append([]string{"test"}, "one")); err == nil {
-		t.Fatal("Failed detecting missing required argument.")
-	}
-
-	if err := cl.Parse(append(append([]string{"test"}, testparams...), "four")); err == nil {
-		t.Fatal("Failed detecting extra arguments for registered params.")
-	}
-
-	if err := cl.Parse(append([]string{"test"}, testparams...)); err != nil {
-		t.Fatal(err)
-	}
-
-	if one != "one" || two != "two" || three != "" {
-		t.Fatal("Failed setting Param values.")
+	if err := cl.Parse([]string{"--boo", "boo"}); err == nil {
+		t.Fatal("Failed detecting non-existent empty root command param.")
 	}
 }
 
-func TestUnregisteredRaw(t *testing.T) {
-
-	testArgs := []string{"test", "one", "two", "three"}
-
+func TestNoRegisteredParams(t *testing.T) {
 	ErrOK := errors.New("everything is fine")
-
-	cmdTest := func(params *Params) error {
+	fooArgs := []string{"foo"}
+	barArgs := []string{"bar", "one", "two", "three"}
+	bazArgs := []string{"baz", "one", "two", "three"}
+	cmdFoo := func(params *Params) error {
+		return ErrOK
+	}
+	cmdBar := func(params *Params) error {
 		for idx, arg := range params.RawArgs() {
-			if testArgs[idx+1] != arg {
+			if barArgs[idx+1] != arg {
 				t.Fatal("Unregistered param mode failed.")
 			}
 		}
-		return ErrOK
+		return nil
 	}
-
 	cl := New()
-	if _, err := cl.AddCommand("test", "Do da test.", cmdTest); err != nil {
+	cl.MustAddCommand("foo", "", cmdFoo)
+	cl.MustAddCommand("bar", "", cmdBar)
+	cl.MustAddCommand("baz", "", nil)
+	if err := cl.Parse(fooArgs); err != ErrOK {
 		t.Fatal(err)
 	}
-
-	if err := cl.Parse(testArgs); err != ErrOK {
-		t.Fatal("Failed propagating the error.")
+	if err := cl.Parse(barArgs); err != nil {
+		t.Fatal(err)
+	}
+	if err := cl.Parse(bazArgs); err == nil {
+		t.Fatal("Failed detecting command not having a handler for raw args.")
 	}
 }
 
-func TestCombinedParams(t *testing.T) {
-
-	one := ""
-	two := ""
-	_ = two
-	three := ""
-	four := ""
-
-	cmdTest := func(params *Params) error {
-		if testing.Verbose() {
-			fmt.Println(params.RawArgs())
-			fmt.Println(one)
-			fmt.Println(two)
-			fmt.Println(three)
-			fmt.Println(four)
+func TestRegisteredRaw(t *testing.T) {
+	cmdFoo := func(params *Params) error {
+		if params.RawValue("bar") != "bar" {
+			t.Fatal("RegisteredRaw failed.")
+		}
+		if params.RawValue("baz") != "baz" {
+			t.Fatal("RegisteredRaw failed.")
 		}
 		return nil
 	}
-
 	cl := New()
-
-	cmd, err := cl.AddCommand("test", "Test command with mixed params.", cmdTest)
-	if err != nil {
+	cmd := cl.MustAddCommand("foo", "", cmdFoo).
+		MustAddRawParam("bar", "", true, nil).
+		MustAddRawParam("baz", "", false, nil)
+	if err := cmd.AddRawParam("boo", "", false, nil); err == nil {
+		t.Fatal("Failed detecting invalid registration of optional raw param after optional raw param.")
+	}
+	if err := cmd.AddRawParam("boo", "", true, nil); err == nil {
+		t.Fatal("Failed detecting invalid registration of required raw param after optional raw param.")
+	}
+	if err := cmd.AddParam("boo", "", "", false, nil); err == nil {
+		t.Fatal("Failed detecting invalid registration of optional prefixed param after raw param.")
+	}
+	if err := cmd.AddParam("boo", "", "", true, nil); err == nil {
+		t.Fatal("Failed detecting invalid registration of required prefixed param after raw param.")
+	}
+	if _, err := cmd.AddCommand("", "", nil); err == nil {
+		t.Fatal("Failed detecting invalid registration of a non-root command with an empty name.")
+	}
+	if _, err := cmd.AddCommand("boo", "", nil); err == nil {
+		t.Fatal("Failed detecting invalid registration of a command on a command with defined raw args.")
+	}
+	if err := cl.Parse([]string{"foo", "bar", "baz"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := cmd.AddParam("one", "", "First, required parameter", true, &one); err != nil {
-		t.Fatal(err)
+	if err := cl.Parse([]string{"foo", "bar", "baz", "boo"}); err == nil {
+		t.Fatal("Failed detecting extra arguments for registered raw params.")
 	}
-	if err := cmd.AddParam("two", "", "Second, optional parameter", false, nil); err != nil {
-		t.Fatal(err)
-	}
-	if err := cmd.AddRawParam("three", "Third, required raw parameter", true, &three); err != nil {
-		t.Fatal(err)
-	}
-	if err := cmd.AddRawParam("four", "Fourth, optional raw parameter", false, &four); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := cl.Parse([]string{"test", "--one", "1", "--two", "three", "four"}); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := cl.Parse([]string{"test", "--one", "1", "three", "four"}); err != nil {
-		t.Fatal(err)
-	}
-
 }
 
-func TestParsed(t *testing.T) {
-
-	cmdTest := func(params *Params) error {
-		if !params.Parsed("one") {
-			t.Fatal("Parsed() failed: prefixed param not marked as parsed.")
-		}
-		if !params.Parsed("two") {
-			t.Fatal("Parsed() failed: raw param not marked as parsed.")
-		}
-		return nil
-	}
-
+func TestRegisteredRawRequired(t *testing.T) {
 	cl := New()
-	cmd, err := cl.AddCommand("parse", "Parse test", cmdTest)
-	if err != nil {
+	var barval, bazval string
+	cl.MustAddCommand("foo", "", nil).
+		MustAddRawParam("bar", "", true, &barval).
+		MustAddRawParam("baz", "", true, &bazval)
+	if err := cl.Parse([]string{"foo", "bar", "baz"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := cmd.AddParam("one", "1", "Param one", false, nil); err != nil {
-		t.Fatal(err)
-	}
-	if err := cmd.AddRawParam("two", "Param two", false, nil); err != nil {
-		t.Fatal(err)
-	}
-
-}
-
-func BenchmarkJsonStringToGoValue(b *testing.B) {
-	in := "foobar"
-	out := ""
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		jsonStringToGoValue(in, &out)
+	if err := cl.Parse([]string{"foo", "bar"}); err == nil {
+		t.Fatal("Failed detecting required params not specified.")
 	}
 }
 
-func TestRawParam(t *testing.T) {
-	h := func(params *Params) error {
-		if params.RawValue("test") != "test" {
-			t.Fatal("RawValue failed.")
+func TestPrefixed(t *testing.T) {
+	barv := ""
+	cmdFoo := func(params *Params) error {
+		if params.RawValue("bar") != "bar" {
+			t.Fatal("TestPrefixed failed.")
+		}
+		if !params.Parsed("baz") {
+			t.Fatal("TestPrefixed failed.")
 		}
 		return nil
 	}
-	var test string
 	cl := New()
-	cl.MustAddCommand("test", "", h).MustAddParam("test", "t", "", true, &test)
-	if err := cl.Parse([]string{"test", "--test", "test"}); err != nil {
+	cmd := cl.MustAddCommand("foo", "", cmdFoo)
+	if err := cmd.AddParam("boo", "", "", true, nil); err == nil {
+		t.Fatal("Failed detecting invalid registration of required prefixed param without valid value.")
+	}
+	if err := cmd.AddParam("boo", "", "", true, 1337); err == nil {
+		t.Fatal("Failed detecting invalid registration of required prefixed param with invalid value.")
+	}
+	cmd.MustAddParam("bar", "r", "", true, &barv).
+		MustAddParam("baz", "z", "", false, nil)
+	if err := cmd.AddParam("boo", "", "", true, &barv); err == nil {
+		t.Fatal("Failed detecting invalid registration of required prefixed param after optional prefixed param.")
+	}
+	if err := cl.Parse([]string{"foo", "--bar", "bar", "--baz"}); err != nil {
 		t.Fatal(err)
+	}
+	if err := cl.Parse([]string{"foo", "-r", "bar", "-z"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := cl.Parse([]string{"foo", "-h"}); err == nil {
+		t.Fatal("Failed detecting non-existent short param.")
+	}
+	if err := cl.Parse([]string{"foo", "--bit", "bit"}); err == nil {
+		t.Fatal("Failed detecting non-existent parameters.")
+	}
+	if err := cl.Parse([]string{"foo", "--bar", "bar", "--baz", "--bit"}); err == nil {
+		t.Fatal("Failed detecting extra params.")
+	}
+	if err := cl.Parse([]string{"foo", "--bar", "bar", "--baz", "--bit", "bit"}); err == nil {
+		t.Fatal("Failed detecting extra params.")
+	}
+	if err := cl.Parse([]string{"foo", "--baz"}); err == nil {
+		t.Fatal("Failed detecting required params not specified.")
+	}
+}
+
+func TestPrefixedRequired(t *testing.T) {
+	cl := New()
+	var barval, bazval string
+	cl.MustAddCommand("foo", "", nil).
+		MustAddParam("bar", "", "", true, &barval).
+		MustAddParam("baz", "", "", true, &bazval)
+	if err := cl.Parse([]string{"foo", "--bar", "bar", "--baz", "baz"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := cl.Parse([]string{"--bar", "bar", "--baz"}); err == nil {
+		t.Fatal("Failed detecting param argument not specified.")
+	}
+	if err := cl.Parse([]string{"--bar", "bar"}); err == nil {
+		t.Fatal("Failed detecting command not specified.")
+	}
+}
+
+func TestCombined(t *testing.T) {
+	cl := New()
+	var valFilip string
+	root := cl.MustAddCommand("foo", "", nil).
+		MustAddParam("alice", "a", "", false, nil).
+		MustAddParam("buick", "b", "", false, nil).
+		MustAddParam("cecil", "c", "", false, nil).
+		MustAddParam("david", "d", "", false, nil).
+		MustAddParam("emily", "e", "", false, nil).
+		MustAddParam("filip", "f", "", false, &valFilip)
+	if err := root.AddParam("alice", "", "", false, nil); err == nil {
+		t.Fatal("Failed detecting duplicate long name.")
+	}
+	if err := root.AddParam("agnes", "a", "", false, nil); err == nil {
+		t.Fatal("Failed detecting duplicate short name.")
+	}
+	if err := root.AddParam("agnes", "agnes", "", false, nil); err == nil {
+		t.Fatal("Failed detecting invalid short name.")
+	}
+	if err := cl.Parse([]string{"foo", "-abcde"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := cl.Parse([]string{"foo", "--alice", "--cecil", "--emily", "-bd"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := cl.Parse([]string{"foo", "-ab", "--cecil", "-de"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := cl.Parse([]string{"foo", "--alice", "-bcd", "--emily"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := cl.Parse([]string{"foo", "-xyz"}); err == nil {
+		t.Fatal("Failed detecting invalid short name.")
+	}
+	if err := cl.Parse([]string{"foo", "-abcde", "-f", "filip"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := cl.Parse([]string{"foo", "-abcdef", "filip"}); err == nil {
+		t.Fatal("Failed detecting short param with required value being combined.")
 	}
 }
