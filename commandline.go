@@ -455,7 +455,7 @@ type Param struct {
 	help string
 	// required specifies if this Param is required.
 	required bool
-	// value is a pointer to a Go value which which is set
+	// value is a pointer to a Go value which is set
 	// from parsed Param value if not nil and  points to a
 	// valid target.
 	value interface{}
@@ -521,7 +521,7 @@ func (p *Params) Parsed(name string) bool {
 	return false
 }
 
-// RawArgs returnes arguments of raw Params in order as passed on command line.
+// RawArgs returns arguments of raw Params in order as passed on command line.
 func (p *Params) RawArgs() []string { return p.rawargs }
 
 // hasRawArgs returns if Params contain one or more raw Param instances.
