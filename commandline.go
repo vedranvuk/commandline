@@ -838,7 +838,7 @@ func (p *Params) parse(cl *Parser, cmd *Command) error {
 		// Set value of normal Param if required.
 		if kind != argComb && param.value != nil || param.raw {
 			if !cl.next() {
-				return errors.New("commandline: param '" + p.longindexes[i] + "' requires a value")
+				return errors.New("commandline: param '" + p.longindexes[i-1] + "' requires a value")
 			}
 			value, _ := cl.arg()
 			if param.value != nil {

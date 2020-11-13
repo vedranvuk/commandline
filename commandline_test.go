@@ -116,6 +116,9 @@ func TestRegisteredRawRequired(t *testing.T) {
 	if err := cl.Parse([]string{"foo", "bar"}); err == nil {
 		t.Fatal("Failed detecting required params not specified.")
 	}
+	if err := cl.Parse([]string{"foo", "bar", "baz", "bit"}); err == nil {
+		t.Fatal("Failed detecting extra raw params.")
+	}
 }
 
 func TestPrefixed(t *testing.T) {
@@ -174,10 +177,10 @@ func TestPrefixedRequired(t *testing.T) {
 	if err := cl.Parse([]string{"foo", "--bar", "bar", "--baz", "baz"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := cl.Parse([]string{"--bar", "bar", "--baz"}); err == nil {
+	if err := cl.Parse([]string{"foo", "--bar", "bar", "--baz"}); err == nil {
 		t.Fatal("Failed detecting param argument not specified.")
 	}
-	if err := cl.Parse([]string{"--bar", "bar"}); err == nil {
+	if err := cl.Parse([]string{"foo", "--bar", "bar"}); err == nil {
 		t.Fatal("Failed detecting command not specified.")
 	}
 }
