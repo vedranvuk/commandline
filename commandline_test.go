@@ -40,7 +40,7 @@ func TestCommands(t *testing.T) {
 
 func TestGlobal(t *testing.T) {
 	cl := New()
-	barCmd := func(params *Params) error {
+	barCmd := func(params Context) error {
 		return nil
 	}
 	if err := cl.Parse([]string{"--verbose"}); err == nil {
@@ -68,10 +68,10 @@ func TestNoRegisteredParams(t *testing.T) {
 	fooArgs := []string{"foo"}
 	barArgs := []string{"bar", "one", "two", "three"}
 	bazArgs := []string{"baz", "one", "two", "three"}
-	cmdFoo := func(params *Params) error {
+	cmdFoo := func(params Context) error {
 		return ErrOK
 	}
-	cmdBar := func(params *Params) error {
+	cmdBar := func(params Context) error {
 		for idx, arg := range params.RawArgs() {
 			if barArgs[idx+1] != arg {
 				t.Fatal("Unregistered param mode failed.")
@@ -95,7 +95,7 @@ func TestNoRegisteredParams(t *testing.T) {
 }
 
 func TestRegisteredRaw(t *testing.T) {
-	cmdFoo := func(params *Params) error {
+	cmdFoo := func(params Context) error {
 		if params.RawValue("bar") != "bar" {
 			t.Fatal("RegisteredRaw failed.")
 		}
@@ -153,7 +153,7 @@ func TestRegisteredRawRequired(t *testing.T) {
 
 func TestPrefixed(t *testing.T) {
 	barv := ""
-	cmdFoo := func(params *Params) error {
+	cmdFoo := func(params Context) error {
 		if params.RawValue("bar") != "bar" {
 			t.Fatal("TestPrefixed failed.")
 		}
