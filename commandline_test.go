@@ -31,7 +31,10 @@ func TestCommands(t *testing.T) {
 		t.Fatal("Failed detecting non-existent empty root command param.")
 	}
 	if err := cl.Parse([]string{"boo"}); err == nil {
-		t.Fatal("failed detecting non-existent command")
+		t.Fatal("failed detecting non-existent command.")
+	}
+	if err := cl.Parse([]string{}); err == nil {
+		t.Fatal("failed detecting no arguments.")
 	}
 }
 
@@ -41,10 +44,10 @@ func TestGlobal(t *testing.T) {
 		return nil
 	}
 	if err := cl.Parse([]string{"--verbose"}); err == nil {
-		t.Fatal("failed detecting command not specified")
+		t.Fatal("failed detecting command not specified.")
 	}
 	if err := cl.Parse([]string{"verbose"}); err == nil {
-		t.Fatal("failed detecting unregistered command")
+		t.Fatal("failed detecting unregistered command.")
 	}
 	cl.MustAddCommand("", "", nil).MustAddParam("verbose", "v", "", false, nil)
 	if err := cl.Parse([]string{"--verbose"}); err != nil {

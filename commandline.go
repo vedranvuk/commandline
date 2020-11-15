@@ -23,6 +23,17 @@ var (
 	ErrInvalidValue = errors.New("commandline: invalid value")
 )
 
+// Context is a CommandFunc context.
+type Context interface {
+	// Parsed will return if the param under specified long name was parsed.
+	Parsed(string) bool
+	// RawValue will return the string value of param, if parsed.
+	RawValue(string) string
+	// RawArgs will return a slice of raw values if this CommandFunc has no
+	// defined params and custom handles params.
+	RawArgs() []string
+}
+
 // CommandFunc is a prototype of a function that handles the event of a
 // Command being parsed from command line arguments.
 //
@@ -34,7 +45,7 @@ var (
 //
 // If the invoked Command has any raw Params registered, parsing will not
 // continue after CommandFunc invocation.
-type CommandFunc = func(*Params) error
+type CommandFunc = func(Context) error
 
 // Parser is a command line parser. Its' Parse method is to be invoked
 // with a slice of command line arguments passed to program.
