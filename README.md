@@ -54,13 +54,13 @@ var (
 )
 
 // cmdGlobal gets invoked for "Global params" unnamed function.
-func cmdGlobal(params *Params) error {
+func cmdGlobal(params Context) error {
 	verbose = params.Parsed("verbose")
 	return nil
 }
 
 // cmdCreate gets invoked for "Create project" command.
-func cmdCreate(params *Params) error {
+func cmdCreate(params Context) error {
 	CreateProject(projectname, projectdir)
 	return nil
 }
