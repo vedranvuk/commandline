@@ -32,6 +32,8 @@ type Context interface {
 	// RawArgs will return a slice of raw values if this CommandFunc has no
 	// defined params and custom handles params.
 	RawArgs() []string
+	// Command returns the parent COmmand of these Params.
+	Command() *Command
 }
 
 // CommandFunc is a prototype of a function that handles the event of a
@@ -328,6 +330,13 @@ func newCommand(parent *Commands, help string, f CommandFunc) *Command {
 	p.Params = *newParams(p)
 	p.Commands = *newCommands(p)
 	return p
+}
+
+// Print prints Commands contained in this Command.
+func (c *Command) Print() string {
+	sb := &strings.Builder{}
+	printCommands(sb, &c.Commands, 0)
+	return sb.String()
 }
 
 // nameToCommand is a map of command name to *Command.
@@ -628,6 +637,9 @@ func (p *Params) RawValue(name string) string {
 // It will be an empty slice if no arguments were passed to the param or the
 // param is not raw type.
 func (p *Params) RawArgs() []string { return p.rawargs }
+
+// Command returns the parent Command of these Params.
+func (p *Params) Command() *Command { return p.cmd }
 
 // hasRawArgs returns if Params contain one or more raw Param instances.
 func (p *Params) hasRawArgs() bool {
