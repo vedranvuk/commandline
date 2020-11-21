@@ -154,50 +154,62 @@ func (p Parser) Print() string {
 	return sb.String()
 }
 
+func writeIndent(sb *strings.Builder, n int) {
+	for i := 0; i < n; i++ {
+		sb.WriteRune('\t')
+	}
+}
+
 // printCommands is a recursive printer or registered Commands and Params.
 // Lines are written to sb from current commands with the indent depth(*tab).
 func printCommands(sb *strings.Builder, commands *Commands, indent int) {
-	indentstr := strings.Repeat("\t", indent)
 	for _, commandname := range commands.nameindexes {
 		command := commands.commandmap[commandname]
-		sb.WriteString(indentstr + commandname + "\t" + command.help + "\n")
+		writeIndent(sb, indent)
+		sb.WriteString(commandname)
+		if command.help != "" {
+			sb.WriteRune('\t')
+			sb.WriteString(command.help)
+		}
+		sb.WriteRune('\n')
 		for _, paramlong := range command.Params.longindexes {
 			param := command.Params.longparams[paramlong]
-			paramtype := ""
-			if param.value != nil {
-				paramtype = reflect.Indirect(reflect.ValueOf(param.value)).Type().Kind().String()
-			}
-			if param.raw {
-				if param.value != nil {
-					if param.required {
-						sb.WriteString(indentstr + "\t<" + paramlong + ">\t(" + paramtype + ")\t" + param.help + "\n")
-					} else {
-						sb.WriteString(indentstr + "\t[" + paramlong + "]\t(" + paramtype + ")\t" + param.help + "\n")
-					}
+			shortparam := command.Params.longtoshort[paramlong]
+			writeIndent(sb, indent)
+			sb.WriteRune('\t')
+			if param.required {
+				if !param.raw {
+					sb.WriteString("<--")
 				} else {
-					if param.required {
-						sb.WriteString(indentstr + "\t<" + paramlong + ">\t(" + paramtype + ")\t" + param.help + "\n")
-					} else {
-						sb.WriteString(indentstr + "\t[" + paramlong + "]\t \t" + param.help + "\n")
-					}
+					sb.WriteRune('<')
 				}
+				sb.WriteString(paramlong)
+				sb.WriteRune('>')
 			} else {
-				if param.value != nil {
-					if shortparam, ok := command.Params.longtoshort[paramlong]; ok {
-						sb.WriteString(indentstr + "\t--" + paramlong + "\t-" + shortparam + "\t(" + paramtype + ")\t" + param.help + "\n")
-					} else {
-						sb.WriteString(indentstr + "\t--" + paramlong + "\t \t(" + paramtype + ")\t" + param.help + "\n")
-					}
+				if !param.raw {
+					sb.WriteString("[--")
 				} else {
-					if shortparam, ok := command.Params.longtoshort[paramlong]; ok {
-						sb.WriteString(indentstr + "\t--" + paramlong + "\t-" + shortparam + "\t" + param.help + "\n")
-					} else {
-						sb.WriteString(indentstr + "\t--" + paramlong + "\t \t" + param.help + "\n")
-					}
+					sb.WriteRune('[')
 				}
+				sb.WriteString(paramlong)
+				sb.WriteRune(']')
 			}
+			if shortparam != "" {
+				sb.WriteString("\t-")
+				sb.WriteString(shortparam)
+			}
+			if param.value != nil {
+				sb.WriteString("\t(")
+				sb.WriteString(reflect.Indirect(reflect.ValueOf(param.value)).Type().Kind().String())
+				sb.WriteRune(')')
+			}
+			if param.help != "" {
+				sb.WriteRune('\t')
+				sb.WriteString(param.help)
+			}
+			sb.WriteRune('\n')
 		}
-		sb.WriteString("\n")
+		sb.WriteRune('\n')
 		if len(command.Commands.commandmap) > 0 {
 			printCommands(sb, &command.Commands, indent+1)
 		}
@@ -725,14 +737,19 @@ func (p *Params) parse(cl *Parser) error {
 	var count int = p.ParamCount()
 	var param *Param
 	var exists bool
-	// If no Params were defined abort parsing and store
-	// remaining arguments to be available to handler
-	// or error out if it has no handler.
+	// No defined params.
 	if count == 0 {
-		if p.cmd.f == nil {
-			return errors.New("commandline: no handler for arguments")
+		// Last Command in chain.
+		if len(p.cmd.commandmap) == 0 {
+			// If there are any args left store them as raw arguments.
+			if len(cl.args) > 0 {
+				p.rawargs = append(p.rawargs, cl.args...)
+			}
+			// Last command in chain must have a handler.
+			if p.cmd.f == nil {
+				return errors.New("commandline: no handler for arguments")
+			}
 		}
-		p.rawargs = append(p.rawargs, cl.args...)
 		return nil
 	}
 	for i := 0; i < count; {
@@ -740,7 +757,7 @@ func (p *Params) parse(cl *Parser) error {
 		switch kind {
 		case argNone:
 			// Nothing to parse.
-			return nil
+			goto check
 		case argCommandOrRaw:
 			// Only raw params possibly accept non-prefixed arguments.
 			// Check if there are any named params left, advance past
@@ -785,23 +802,28 @@ func (p *Params) parse(cl *Parser) error {
 			cl.next()
 			continue
 		}
-		// Read value if Param has value registered.
+		// Parse value argument for params with value.
 		if param.value != nil {
-			if kind != argCommandOrRaw && !cl.next() {
-				return errors.New("commandline: param '" + p.longindexes[i-1] + "' requires a value")
+			// Advance argument for prefixed params.
+			if !param.raw {
+				if !cl.next() {
+					return errors.New("commandline: param '" + p.longindexes[i-1] + "' requires a value")
+				}
+				arg = cl.peek()
 			}
-			arg = cl.peek()
+			// Set value.
 			if err = stringToGoValue(arg, param.value); err != nil {
 				return err
 			}
 		}
-		// Mark as parsed, advance.
-		param.parsed = true
+		// Advance.
 		param.rawvalue = arg
+		param.parsed = true
 		if !cl.next() {
 			break
 		}
 	}
+check:
 	// Check all required params were parsed.
 	for arg, param = range p.longparams {
 		if param.required && !param.parsed {

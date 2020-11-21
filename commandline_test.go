@@ -292,6 +292,20 @@ func TestCombined(t *testing.T) {
 	}
 }
 
+func TestCombinedRequired(t *testing.T) {
+	cl := New()
+	cl.MustAddCommand("foo", "", nil).
+		MustAddCommand("bar", "", nil).
+		MustAddParam("baz", "", "", false, nil).
+		MustAddRawParam("bat", "", true, nil)
+	if err := cl.Parse([]string{"foo", "bar"}); err == nil {
+		t.Fatal("Failed detecting required raw param")
+	}
+	if err := cl.Parse([]string{"foo", "bar", "bat"}); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func BenchmarkParser(b *testing.B) {
 	cl := New()
 	var barVal string
@@ -312,12 +326,4 @@ func ExampleParser() {
 	cl.MustAddCommand("baz", "Do the baz.", nil).MustAddRawParam("bat", "Enable bat.", false, nil)
 	cl.Parse([]string{"--verbose", "foo", "--bar", "bar", "baz", "bat"})
 	fmt.Println(cl.Print())
-	// Output:
-	// --verbose       -v      Verbose output.
-
-	// foo     Do the foo.
-	//         --bar   -r      (string)        Enable bar.
-
-	// baz     Do the baz.
-	//         [bat]           Enable bat.
 }
