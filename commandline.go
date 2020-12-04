@@ -2,12 +2,12 @@
 package commandline
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"reflect"
 	"strings"
+
+	"github.com/vedranvuk/strconvex"
 )
 
 var (
@@ -24,15 +24,19 @@ var (
 )
 
 // Context is a CommandFunc context.
+//
+// It provides access to params associated with the Command and the definition
+// and post-parse state of the Command itself.
 type Context interface {
 	// Parsed will return if the param under specified long name was parsed.
 	Parsed(string) bool
-	// RawValue will return the string value of param, if parsed.
+	// RawValue will return the parsed string value of param as specified on
+	// command line, if parsed.
 	RawValue(string) string
 	// RawArgs will return a slice of raw values if this CommandFunc has no
 	// defined params and custom handles params.
 	RawArgs() []string
-	// Command returns the parent COmmand of these Params.
+	// Command returns the parent Command of these Params.
 	Command() *Command
 }
 
@@ -834,29 +838,9 @@ check:
 }
 
 // stringToGoValue converts a string to a Go value or returns an error.
-// TODO expand on this.
 func stringToGoValue(s string, i interface{}) error {
-	if err := jsonStringToGoValue(s, i); err != nil {
+	if err := strconvex.StringToInterface(s, i); err != nil {
 		return fmt.Errorf("commandline: error converting value %s: %w", s, err)
-	}
-	return nil
-}
-
-// jsonStringToGoValue converts a json string to a Go value or returns an error.
-func jsonStringToGoValue(s string, i interface{}) error {
-	// Wrap string s into quotes if target is a string
-	// so that unmarshaling succeeds.
-	//
-	// This needs to be done with object fields as well.
-	v := reflect.Indirect(reflect.ValueOf(i))
-	for v.Kind() == reflect.Ptr {
-		v = reflect.Indirect(v)
-	}
-	if v.Kind() == reflect.String {
-		s = "\"" + s + "\""
-	}
-	if err := json.NewDecoder(strings.NewReader(s)).Decode(i); err != nil {
-		log.Fatal(err)
 	}
 	return nil
 }
