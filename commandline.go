@@ -10,6 +10,9 @@ import (
 	"github.com/vedranvuk/strconvex"
 )
 
+// TODO Implement all command visitation and a context flag denoting execution.
+// TODO Better printing. Use two spaces instead of tabs. Wrap to 80 chars.
+
 var (
 	// ErrNoArgs is returned by Parse if no arguments were specified on
 	// command line and there are defined Commands or Params.
@@ -398,13 +401,13 @@ func (c *Commands) AddCommand(name, help string, f CommandFunc) (*Command, error
 		if name == "" {
 			return nil, errors.New("commandline: duplicate empty root command")
 		}
-		return nil, errors.New("commandline: duplicate name '" + name + "'")
+		return nil, fmt.Errorf("commandline: duplicate command name '%s'", name)
 	}
 	// Disallow adding sub-Commands to a Command that has
 	// a CommandRawFunc handler.
 	if parentcmd, ok := c.parent.(*Command); ok {
 		if parentcmd.Params.hasRawArgs() {
-			return nil, errors.New("commandline: cannot register a sub-command in a command with raw params")
+			return nil, errors.New("commandline: cannot register a sub-command in a command with raw parameters")
 		}
 	}
 	// Define and add a new Command to self.
@@ -435,7 +438,7 @@ func (c *Commands) MustGetCommand(name string) *Command {
 	if cmd, ok := c.commandmap[name]; ok {
 		return cmd
 	}
-	panic("command '" + name + "' not found")
+	panic(fmt.Sprintf("commandline: command '%s' not found", name))
 }
 
 // parse parses Parser args into this Commands.
@@ -467,14 +470,14 @@ func (c *Commands) parse(cl *Parser) error {
 				}
 			}
 			// Else, this is extra.
-			return errors.New("commandline: command '" + arg + "' not found")
+			return fmt.Errorf("commandline: command '%s' not found", arg)
 		}
 	default:
 		// Arg is not a Command, but a Param. See if a
 		// special case of single unnamed root command.
 		cmd, exists = c.commandmap[""]
 		if !exists {
-			return errors.New("commandline: expected command, got " + kind.String() + " '" + arg + "'")
+			return fmt.Errorf("commandline: expected command, got %s '%s'", kind, arg)
 		}
 		global = true
 	}
@@ -676,17 +679,17 @@ func (p *Params) addParam(long, short, help string, required, raw bool, value in
 	}
 	// No long duplicates.
 	if _, exists := p.longparams[long]; exists {
-		return errors.New("commandline: duplicate name '" + long + "'")
+		return fmt.Errorf("commandline: duplicate long parameter name '%s'", long)
 	}
 	// No short duplicates if not empty.
 	if _, exists := p.shortparams[short]; exists && short != "" {
-		return errors.New("commandline: duplicate name '" + short + "'")
+		return fmt.Errorf("commandline: duplicate short parameter name '%s'", short)
 	}
 	// Param continuity checks.
 	if lp := p.last(); lp != nil {
 		if lp.raw {
 			if !raw {
-				return errors.New("commandline: cannot register prefixed param after raw param")
+				return errors.New("commandline: cannot register prefixed parameter after raw parameter")
 			}
 			if !lp.required && !required {
 				return errors.New("commandline: cannot register multiple optional parameters")
@@ -782,12 +785,12 @@ func (p *Params) parse(cl *Parser) error {
 			i++
 		case argShort:
 			if param, exists = p.shortparams[arg]; !exists {
-				return errors.New("commandline: short parameter '" + arg + "' not found")
+				return fmt.Errorf("commandline: short parameter '%s' not found", arg)
 			}
 			i++
 		case argLong:
 			if param, exists = p.longparams[arg]; !exists {
-				return errors.New("commandline: long parameter '" + arg + "' not found")
+				return fmt.Errorf("commandline: long parameter '%s' not found", arg)
 			}
 			i++
 		case argComb:
@@ -795,10 +798,10 @@ func (p *Params) parse(cl *Parser) error {
 			shorts := strings.Split(arg, "")
 			for _, short := range shorts {
 				if param, exists = p.shortparams[short]; !exists {
-					return errors.New("commandline: short parameter '" + short + "' not found")
+					return fmt.Errorf("commandline: short parameter '%s' not found", short)
 				}
 				if param.value != nil {
-					return errors.New("commandline: short param '" + short + "' with parameter combined")
+					return fmt.Errorf("commandline: short parameter '%s' requires argument, cannot combine", short)
 				}
 				param.parsed = true
 				i++
@@ -811,7 +814,7 @@ func (p *Params) parse(cl *Parser) error {
 			// Advance argument for prefixed params.
 			if !param.raw {
 				if !cl.next() {
-					return errors.New("commandline: param '" + p.longindexes[i-1] + "' requires a value")
+					return fmt.Errorf("commandline: parameter '%s' requires a value", arg)
 				}
 				arg = cl.peek()
 			}
@@ -831,7 +834,7 @@ check:
 	// Check all required params were parsed.
 	for arg, param = range p.longparams {
 		if param.required && !param.parsed {
-			return errors.New("commandline: required parameter '" + arg + "' not specified")
+			return fmt.Errorf("commandline: required parameter '%s' not specified", arg)
 		}
 	}
 	return nil

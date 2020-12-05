@@ -309,21 +309,34 @@ func TestCombinedRequired(t *testing.T) {
 func BenchmarkParser(b *testing.B) {
 	cl := New()
 	var barVal string
-	cl.MustAddCommand("", "", nil).MustAddParam("verbose", "v", "Verbose output.", false, nil)
-	cl.MustAddCommand("foo", "Do the foo.", nil).MustAddParam("bar", "r", "Enable bar.", true, &barVal)
-	cl.MustAddCommand("baz", "Do the baz.", nil).MustAddRawParam("bat", "Enable bat.", false, nil)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		cl.Parse([]string{"--verbose", "foo", "--bar", "bar", "baz", "bat"})
+	var cmdfunc = func(ctx Context) error {
+		return nil
 	}
+	cl.MustAddCommand("", "", nil).MustAddParam("verbose", "v", "Verbose output.", false, nil)
+	cl.MustAddCommand("foo", "Do the foo.", nil).MustAddParam("bar", "r", "Enable bar.", true, &barVal).
+		MustAddCommand("baz", "Do the baz.", cmdfunc).MustAddRawParam("bat", "Enable bat.", false, nil)
+	b.ResetTimer()
+	cl.Parse([]string{"--verbose", "foo", "--bar", "bar", "baz", "bat"})
 }
 
 func ExampleParser() {
 	cl := New()
 	var barVal string
+	var cmdfunc = func(ctx Context) error {
+		return nil
+	}
 	cl.MustAddCommand("", "", nil).MustAddParam("verbose", "v", "Verbose output.", false, nil)
-	cl.MustAddCommand("foo", "Do the foo.", nil).MustAddParam("bar", "r", "Enable bar.", true, &barVal)
-	cl.MustAddCommand("baz", "Do the baz.", nil).MustAddRawParam("bat", "Enable bat.", false, nil)
-	cl.Parse([]string{"--verbose", "foo", "--bar", "bar", "baz", "bat"})
+	cl.MustAddCommand("foo", "Do the foo.", nil).MustAddParam("bar", "r", "Enable bar.", true, &barVal).
+		MustAddCommand("baz", "Do the baz.", cmdfunc).MustAddRawParam("bat", "Enable bat.", false, nil)
+	if err := cl.Parse([]string{"--verbose", "foo", "--bar", "bar", "baz", "bat"}); err != nil {
+		panic(err)
+	}
 	fmt.Println(cl.Print())
+	// Output:[--verbose]     -v      Verbose output.
+
+	// foo     Do the foo.
+	// <--bar> -r      (string)        Enable bar.
+
+	// baz     Do the baz.
+	//		[bat]   Enable bat.
 }
