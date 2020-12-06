@@ -1,10 +1,10 @@
 # commandline
 
-A command oriented command line parser.
+A lightweight, command-oriented command line parser.
 
 ## Description
 
-Central Parser type registers Commands with Handlers. Command can have optional 
+Central Parser type registers Commands and invokes Handlers. Command can have optional 
 or required Param definitions which can write directly to Go values and be
 analyzed in a Handler.
 
@@ -13,39 +13,58 @@ Commands can have Commands of their own allowing for a Command hierarchy.
 Params can be Prefixed (specified by name) or Raw (specified by index and 
 addressable by name).
 
-Example with panic functions:
+Commandline's only dependency outside of stdlib is `github.com/vedranvuk/strconvex` 
+which is a lightweight, reflect-based string to Go value converter used for 
+converting command line arguments to their registered variables. Please
+see that package for details on how Commandline converts strings to Go values.
+
+## Examples
+
+### Example with panic functions
 
 ```go
-// New parser.
-cl := New()
-// To store value parsed for foo's bar param.
-var barVal string
-// Add a special unnamed command to root to hold 'global' params.
-// Directly register a 'verbose' param on it. 
+cl := New() // New Parser.
+var barVal string // Receives value of 'bar' parameter.
+// Command execution handler, in this example shared by multiple commands.
+var cmdfunc = func(ctx Context) error {
+	if ctx.Name() == "baz" && ctx.Arg("bat") != "bat" {
+		return errors.New("I never asked for this.")
+	}
+	if ctx.Executed() && ctx.Name() == "baz" {
+		fmt.Println("Hello from 'baz' Command.")
+	}
+	return nil
+}
+// Register a special 'global' command with an empty name used for preceeding 
+// commands with params and register one prefixed param on it.
 cl.MustAddCommand("", "", nil).MustAddParam("verbose", "v", "Verbose output.", false, nil)
-// Add a 'foo' command and directly register a 'bar' prefixed param on it.
-cl.MustAddCommand("foo", "Do the foo.", nil).MustAddParam("bar", "r", "Enable bar.", true, &barVal)
-// Add a 'baz' command and directly register a 'bat' raw param on it.
-cl.MustAddCommand("baz", "Do the baz.", nil).MustAddRawParam("bat", "Enable bat.", false, nil)
-// Parse global verbose flag, execute 'foo' command and pass it '--bar' param 
-// with value 'bar' that is written to &barVal, execute baz command and read 
-// 'bat' as its' bat param value.
-cl.Parse([]string{"--verbose", "foo", "--bar", "bar", "baz", "bat"})
+// Register a 'foo' command with 'bar' prefixed param.
+// Immediately register a 'baz' sub-command on 'foo' command with 'bat' raw paramater.
+cl.MustAddCommand("foo", "Do the foo.", cmdfunc).MustAddParam("bar", "r", "Enable bar.", true, &barVal).
+	MustAddCommand("baz", "Do the baz.", cmdfunc).MustAddRawParam("bat", "Enable bat.", false, nil)
+// Parse parameters.
+// Mark global empty command's verbose param as parsed.
+// Invoke 'cmdfunc' for 'foo' command and set barVal to 'bar'.
+// Invoke 'cmdfunc' for 'baz' command and set 'baz' parameter value to 'bat'.
+if err := cl.Parse([]string{"--verbose", "foo", "--bar", "bar", "baz", "bat"}); err != nil {
+	panic(err)
+}
+// Print the registered commands and their parameters.
 fmt.Println(cl.Print())
-// Output:
-// --verbose       -v      Verbose output.
+// Output: Hello from 'baz' Command.
+
+// [--verbose]     -v      Verbose output.
 
 // foo     Do the foo.
-//         --bar   -r      (string)        Enable bar.
+// 		<--bar> -r      (string)        Enable bar.
 
-// baz     Do the baz.
-//         [bat]           Enable bat.
+// 		baz     Do the baz.
+// 				[bat]   Enable bat.
 ```
 
-Example with error functions:
+### Example with error functions
 
 ```go
-
 // Some variables that will receive values.
 var (
 	verbose     bool
@@ -94,23 +113,19 @@ cmd.AddParam("name", "n", "Project name", true, &projectname)
 // param value itself.
 cmd.AddRawParam("directory", "Specify project directory", false, &projectdir)
 
-// Parse command line.
+// Parse command line, valid one would be "-v create --name myproject /home/me/myproject".
 if err := parser.Parse(os.Args[1:]); err != nil {
 	log.Fatal(err)
 }
 ```
-
-Valid command line for this example would be: `-v create --name myproject /home/me/myproject`
 
 ## Status
 
 Working as intended. No API changes except additions planned.
 
 What's left:
-* Reflect incomming, will replace JSON with a light string converter.
-* Maybe abstract value parsing with codecs.
-* Maybe support complex structures as parameters.
-* Maybe add a reflector from Go composites to preconstructed Parser.
+* ~~Maybe support complex structures as parameters.~~
+* Maybe go:generate Parser definitions from Go composites.
 * Maybe go:generate command handlers from a Parser instance.
 
 ## License

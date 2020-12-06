@@ -48,7 +48,7 @@ func TestVisit(t *testing.T) {
 	var foo = func(ctx Context) error {
 		foocount++
 		if ctx.Executed() {
-			t.Fatal("Command.Executed() failed.")
+			t.Fatal("TestVisit failed.")
 		}
 		return nil
 	}
@@ -56,7 +56,7 @@ func TestVisit(t *testing.T) {
 	var bar = func(ctx Context) error {
 		barcount++
 		if ctx.Executed() {
-			t.Fatal("Command.Executed() failed.")
+			t.Fatal("TestVisit failed.")
 		}
 		return nil
 	}
@@ -64,7 +64,7 @@ func TestVisit(t *testing.T) {
 	var baz = func(ctx Context) error {
 		bazcount++
 		if ctx.Executed() {
-			t.Fatal("Command.Executed() failed.")
+			t.Fatal("TestVisit failed.")
 		}
 		return nil
 	}
@@ -72,7 +72,7 @@ func TestVisit(t *testing.T) {
 	var bat = func(ctx Context) error {
 		batcount++
 		if !ctx.Executed() {
-			t.Fatal("Command.Executed() failed.")
+			t.Fatal("TestVisit failed.")
 		}
 		return nil
 	}
@@ -85,7 +85,7 @@ func TestVisit(t *testing.T) {
 	}
 	if foocount != 1 || barcount != 1 || bazcount != 1 || batcount != 1 {
 		fmt.Println(foocount, barcount, bazcount, batcount)
-		t.Fatal("Visit failed.")
+		t.Fatal("TestVisit failed.")
 	}
 }
 
@@ -93,13 +93,13 @@ func TestContextPrefixed(t *testing.T) {
 	var bar string
 	var foo = func(ctx Context) error {
 		if !ctx.Parsed("bar") {
-			t.Fatal("Context failed.")
+			t.Fatal("TestContextPrefixed failed.")
 		}
 		if ctx.Arg("bar") != "baz" {
-			t.Fatal("Context failed.")
+			t.Fatal("TestContextPrefixed failed.")
 		}
 		if len(ctx.Args()) != 0 {
-			t.Fatal("Context failed.")
+			t.Fatal("TestContextPrefixed failed.")
 		}
 		return nil
 	}
@@ -113,13 +113,13 @@ func TestContextPrefixed(t *testing.T) {
 func TestContextRaw(t *testing.T) {
 	var foo = func(ctx Context) error {
 		if !ctx.Parsed("bar") {
-			t.Fatal("Context failed.")
+			t.Fatal("TestContextRaw failed.")
 		}
 		if ctx.Arg("bar") != "bar" {
-			t.Fatal("Context failed.")
+			t.Fatal("TestContextRaw failed.")
 		}
 		if len(ctx.Args()) != 0 {
-			t.Fatal("Context failed.")
+			t.Fatal("TestContextRaw failed.")
 		}
 		return nil
 	}
@@ -127,6 +127,41 @@ func TestContextRaw(t *testing.T) {
 	cl.MustAddCommand("foo", "", foo).MustAddRawParam("bar", "", false, nil)
 	if err := cl.Parse([]string{"foo", "bar"}); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestContextUnregistered(t *testing.T) {
+	var foo = func(ctx Context) error {
+		a := ctx.Args()
+		if a[0] != "1" || a[1] != "2" || a[2] != "3" {
+			t.Fatal("TestContextUnregistered failed.")
+		}
+		return nil
+	}
+	cl := New()
+	cl.MustAddCommand("foo", "", foo)
+	if err := cl.Parse([]string{"foo", "1", "2", "3"}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestPropagation(t *testing.T) {
+	var rv = errors.New("propagation")
+	var handler = func(ctx Context) error {
+		if ctx.Name() == "bar" {
+			return rv
+		}
+		if ctx.Name() == "baz" {
+			t.Fatal("TestPropagation failed.")
+		}
+		return nil
+	}
+	cl := New()
+	cl.MustAddCommand("foo", "", handler).
+		MustAddCommand("bar", "", handler).
+		MustAddCommand("baz", "", handler)
+	if err := cl.Parse([]string{"foo", "bar", "baz"}); err != rv {
+		t.Fatal("TestPropagation failed.")
 	}
 }
 
@@ -417,6 +452,9 @@ func ExampleParser() {
 	cl := New()
 	var barVal string
 	var cmdfunc = func(ctx Context) error {
+		if ctx.Executed() && ctx.Name() == "baz" {
+			fmt.Println("Hello from 'baz' Command.")
+		}
 		return nil
 	}
 	cl.MustAddCommand("", "", nil).MustAddParam("verbose", "v", "Verbose output.", false, nil)
@@ -426,11 +464,13 @@ func ExampleParser() {
 		panic(err)
 	}
 	fmt.Println(cl.Print())
-	// Output:[--verbose]     -v      Verbose output.
+	// Output: Hello from 'baz' Command.
+
+	// [--verbose]     -v      Verbose output.
 
 	// foo     Do the foo.
-	// <--bar> -r      (string)        Enable bar.
+	// 		<--bar> -r      (string)        Enable bar.
 
-	// baz     Do the baz.
-	//		[bat]   Enable bat.
+	// 		baz     Do the baz.
+	// 				[bat]   Enable bat.
 }

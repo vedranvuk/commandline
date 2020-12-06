@@ -30,6 +30,8 @@ var (
 
 // Context is a CommandFunc context that provides info about Command execution.
 type Context interface {
+	// Name returns the name of Command which this handler was executed for.
+	Name() string
 	// Executed returns if this Command was the last matched Command and is
 	// considered as executed. Matched Commands in the chain leading up to
 	// last Command specified on command line are not marked as executed.
@@ -118,6 +120,8 @@ type CommandFunc = func(Context) error
 // If Params are defined as optional they do not cause a parse error if not
 // parsed from program args and return a parse error if defined as required and
 // not parsed from command line.
+//
+// For specifics on how Params are parsed see AddParam and AddRawParam help.
 //
 // Commands can have a CommandFunc registered optionaly so that a Command can
 // serve solely as sub-Command selector. For more details see CommandFunc.
@@ -234,7 +238,7 @@ func (p *Parser) reset() {
 	resetCommands(&p.Commands)
 }
 
-// resetCommands recursively resets all Params in Commands.
+// resetCommands recursively resets all Commands and their Params states.
 func resetCommands(c *Commands) {
 	for _, cmd := range c.commandmap {
 		cmd.executed = false
@@ -252,6 +256,9 @@ func resetCommands(c *Commands) {
 // context is the Context adapter.
 type context struct{ cmd *Command }
 
+// Name returns Command's name.
+func (c *context) Name() string { return c.cmd.name }
+
 // Args returns raw Command arguments.
 func (c *context) Args() []string { return c.cmd.Params.rawargs }
 
@@ -263,7 +270,8 @@ func (c *context) Parsed(name string) bool {
 	return false
 }
 
-// Arg returns the raw parameter of the parameter with specified long name.
+// Arg returns the argument of the raw parameter or prefixed parameter with
+// specified long name.
 func (c *context) Arg(name string) string {
 	if param, exists := c.cmd.Params.longparams[name]; exists {
 		return param.rawvalue
@@ -275,7 +283,7 @@ func (c *context) Arg(name string) string {
 func (c *context) Executed() bool { return c.cmd.executed }
 
 // Print prints the context's Command.
-func (c *context) Print() string { return c.cmd.Print() }
+func (c *context) Print() string { return c.cmd.print() }
 
 // exec executes the context's command and returns its' handler return value.
 func (c *context) exec() error {
@@ -286,7 +294,7 @@ func (c *context) exec() error {
 }
 
 // visitCommands visits all matched commands, constructs a context and calls
-// their handlers. Propagates return value of last matched Commands' handler.
+// their handlers. Propagates first non-nil return value of visited handler.
 func (p *Parser) visitCommands() error {
 	var ctx context
 	var l = len(p.matchedCommands)
@@ -387,10 +395,7 @@ func (p *Parser) next() bool {
 	return len(p.args) > 0
 }
 
-// Command is a command definition.
-// A Command can contain sub-Commands and propagate Parser args
-// further down the Commands chain. It can have zero or more defined
-// Param instances in its' Params.
+// Command is a Command definition.
 type Command struct {
 	parent *Commands
 	// help is the Command help text.
@@ -398,10 +403,8 @@ type Command struct {
 	// f is the function to invoke when this Command is executed.
 	// Can be nil, CommandFunc or CommandRawFunc.
 	f CommandFunc
-
 	// executed specifies if this command was executed.
 	executed bool
-
 	Params   // Params are this Command's Params.
 	Commands // Commands are this Command's Commands.
 }
@@ -418,11 +421,8 @@ func newCommand(parent *Commands, help string, f CommandFunc) *Command {
 	return p
 }
 
-// Executed returns if the command was executed.
-func (c *Command) Executed() bool { return c.executed }
-
-// Print prints Commands contained in this Command.
-func (c *Command) Print() string {
+// print prints Commands contained in this Command.
+func (c *Command) print() string {
 	sb := &strings.Builder{}
 	printCommands(sb, &c.Commands, 0)
 	return sb.String()
@@ -437,6 +437,8 @@ type Commands struct {
 	// If it is a Parser this Commands is the root Commands.
 	// If it is a Command this is a sub-Command Commands.
 	parent interface{}
+	// name is the Command name.
+	name string
 	// commandmap is a map of command names to *Command definitions.
 	commandmap nameToCommand
 	// nameindexes is a slice of command names in order as they were defined.
@@ -482,6 +484,7 @@ func (c *Commands) AddCommand(name, help string, f CommandFunc) (*Command, error
 	}
 	// Define and add a new Command to self.
 	cmd := newCommand(c, help, f)
+	cmd.name = name
 	c.commandmap[name] = cmd
 	c.nameindexes = append(c.nameindexes, name)
 	return cmd, nil
@@ -530,7 +533,7 @@ func (c *Commands) parse(cl *Parser) error {
 			// and execute it with stored raw params.
 
 			if len(cl.matchedCommands) > 0 {
-				if cmd = cl.matchedCommands[len(cl.matchedCommands)-1]; cmd.f != nil && cmd.ParamCount() == 0 {
+				if cmd = cl.matchedCommands[len(cl.matchedCommands)-1]; cmd.f != nil && cmd.paramCount() == 0 {
 					return cl.visitCommands()
 				}
 			}
@@ -587,7 +590,7 @@ type Param struct {
 	// rawvalue is the raw parsed param value, possibly empty.
 	rawvalue string
 	// value is a pointer to a Go value which is set
-	// from parsed Param value if not nil and  points to a
+	// from parsed Param value if not nil and points to a
 	// valid target.
 	value interface{}
 	// raw specifies if this param is a raw param.
@@ -609,8 +612,8 @@ func newParam(help string, required, raw bool, value interface{}) *Param {
 // nameToParam maps a param name to *Param.
 type nameToParam map[string]*Param
 
-// nameToName maps a long param name to short param name.
-type nameToName map[string]string
+// longToShort maps a long param name to short param name.
+type longToShort map[string]string
 
 // A Params defines a set of Command Params unique by long name.
 type Params struct {
@@ -621,7 +624,7 @@ type Params struct {
 	// shortparams is a map of short param name to *Param.
 	shortparams nameToParam
 	// longtoshort maps a long param name to short param name.
-	longtoshort nameToName
+	longtoshort longToShort
 	// longindexes hold long param names in order as they are added.
 	longindexes []string
 	// rawargs stores the parsed raw Param instances.
@@ -634,7 +637,7 @@ func newParams(cmd *Command) *Params {
 		cmd,
 		make(nameToParam),
 		make(nameToParam),
-		make(nameToName),
+		make(longToShort),
 		[]string{},
 		[]string{},
 	}
@@ -670,12 +673,16 @@ func (p *Params) MustAddParam(long, short, help string, required bool, value int
 
 // AddRawParam registers a raw Param under specified name which must be unique
 // in long Params names. Raw params can only be defined after prefixed params
-// or only raw params. Calls to AddParam after AddRawParam will error.
+// or other raw params. Calls to AddParam after AddRawParam will error.
 //
-// Parsed arguments are applied to raw Params in order as they are defined. If
-// value is a pointer to a valid Go value argument will be converted to
-// that Go value. Specifying a value is optional and if nil, parsed argument
+// Parsed arguments are applied to registered raw Params in order as they are
+// defined. If value is a pointer to a valid Go value argument will be converted
+// to that Go value. Specifying a value is optional and if nil, parsed argument
 // will not be parsed into the value.
+//
+// Marking a raw param as required does not imply that value must not be nil
+// as is in prefixed params. Required flag solely returns a parse error if
+// required raw param was not parsed and value is set only if non-nil.
 //
 // A single non-required raw Param is allowed and it must be the last one.
 //
@@ -766,15 +773,15 @@ func (p *Params) last() *Param {
 	return p.longparams[p.longindexes[len(p.longindexes)-1]]
 }
 
-// ParamCount returns number of defined params.
-func (p *Params) ParamCount() int { return len(p.longindexes) }
+// paramCount returns number of defined params.
+func (p *Params) paramCount() int { return len(p.longindexes) }
 
 // parse parses the Parser args into this Params.
 func (p *Params) parse(cl *Parser) error {
 	var err error
 	var arg string
 	var kind argKind
-	var count int = p.ParamCount()
+	var count int = p.paramCount()
 	var param *Param
 	var exists bool
 	// No defined params.
