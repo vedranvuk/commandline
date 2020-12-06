@@ -1,3 +1,7 @@
+// Copyright 2020 Vedran Vuk. All rights reserved.
+// Use of this source code is governed by a MIT
+// license that can be found in the LICENSE file.
+
 // Package commandline implements a command line parser.
 package commandline
 
@@ -10,50 +14,55 @@ import (
 	"github.com/vedranvuk/strconvex"
 )
 
-// TODO Implement all command visitation and a context flag denoting execution.
 // TODO Better printing. Use two spaces instead of tabs. Wrap to 80 chars.
 
 var (
 	// ErrNoArgs is returned by Parse if no arguments were specified on
 	// command line and there are defined Commands or Params.
 	ErrNoArgs = errors.New("commandline: no arguments")
-	// ErrInvalidName is returned by Add* methods when an invalid Command or
-	// Param long or short name is specified.
+	// ErrInvalidName is returned by Add* methods when an invalid Command,
+	// Param long or Param short name is specified.
 	ErrInvalidName = errors.New("commandline: invalid name")
-	// ErrInvalidValue is returned by Add* methods or during parsing if an
-	// invalid parameter is given for a Param value, i.e. not a valid pointer
-	// to a Go value.
+	// ErrInvalidValue is returned by Add* and Parse methods if an invalid
+	// parameter is given for a Param value, i.e. not a valid Go value pointer.
 	ErrInvalidValue = errors.New("commandline: invalid value")
 )
 
-// Context is a CommandFunc context.
-//
-// It provides access to params associated with the Command and the definition
-// and post-parse state of the Command itself.
+// Context is a CommandFunc context that provides info about Command execution.
 type Context interface {
-	// Parsed will return if the param under specified long name was parsed.
+	// Executed returns if this Command was the last matched Command and is
+	// considered as executed. Matched Commands in the chain leading up to
+	// last Command specified on command line are not marked as executed.
+	//
+	// All CommandFuncs defined for Commands in the command chain parsed from
+	// command line arguments are visited and this property discerns the visited
+	// Commands from the executed Command.
+	Executed() bool
+	// Parsed returns if the parameter under specified long name was parsed.
+	// If the parameter under specified long name was not defined returns false.
 	Parsed(string) bool
-	// RawValue will return the parsed string value of param as specified on
-	// command line, if parsed.
-	RawValue(string) string
-	// RawArgs will return a slice of raw values if this CommandFunc has no
-	// defined params and custom handles params.
-	RawArgs() []string
-	// Command returns the parent Command of these Params.
-	Command() *Command
+	// Arg returns the argument of parameter under specified long name if the
+	// parameter is prefixed, or name if the parameter is raw.
+	// If parameter was not parsed an empty string is returned.
+	Arg(string) string
+	// Args returns a slice of arguments passed to Command in the order as they
+	// were parsed if Command has no defined parameters. It returns an empty
+	// slice if Command has one or more defined parameters, prefixed or raw.
+	Args() []string
+	// Print prints sub Commands of the Command this Context belongs to.
+	Print() string
 }
 
 // CommandFunc is a prototype of a function that handles the event of a
 // Command being parsed from command line arguments.
 //
-// Parser parses Command's Params and pauses parsing when it finds next Command
-// in arguments or it exhausts arguments, invokes parsed Command's CommandFunc
-// carrying parsed Params then either continues parsing if the handler returns
-// nil or stops and returns the error that the handler returned back to the
-// Parse method whose caller is responsible for interpreting that error.
+// CommandFuncs of all Commands in the chain parsed on command line are
+// visited during Parser.Parse(). Only the last matched command is marked
+// as executed and can be discerned from visited CommandFuncs using
+// Context.Executed().
 //
-// If the invoked Command has any raw Params registered, parsing will not
-// continue after CommandFunc invocation.
+// If a CommandFunc returns a non-nil error further calling of parsed Commands
+// CommandFuncs is aborted and the error is propagated to Parse method.
 type CommandFunc = func(Context) error
 
 // Parser is a command line parser. Its' Parse method is to be invoked
@@ -69,7 +78,7 @@ type CommandFunc = func(Context) error
 // Root Commands, as an exception, allow for one Command with an empty name
 // to be defined. This is to allow that program args need not start with a
 // Command and to allow Params to be passed first which can act as "global".
-// e.g. "--verbose list users"
+// e.g. "--verbose list users".
 //
 // Command can have one or more Param instances defined in its' Params which
 // can have names, help text, be required or optional and have an optional
@@ -79,8 +88,8 @@ type CommandFunc = func(Context) error
 // If a pointer to a Go value is registered with a Param, the Param will require
 // an argument following it that the parser will try to convert to the Go value
 // registered with Param. Otherwise the Param will act as a simple flag which
-// can be checked if parsed in the handler by checking the result of handler's
-// Params.Parsed("long param name").
+// can be checked if parsed in the Command handler by checking the result of
+// handler's Context.Parsed() method.
 //
 // Parser supports prefixed and raw params which can be combined on a Command
 // with a caveat that the Command that has one or more raw params registered
@@ -89,11 +98,11 @@ type CommandFunc = func(Context) error
 //
 // Prefixed params are explicitly addressed on a command line and can have
 // short and long forms. They can be marked optional or required and be
-// registered in any order, but before any raw params.
+// registered in any order, but must be defined before any raw params.
 //
 // Short Param names have the "-" prefix, can be one character long and can be
 // combined together following the short form prefix if none of the combined
-// Params require a Param Value. They are optional per Param.
+// Params require a Param Value. All combined short params must all be optional.
 //
 // Long Param names have the "--" prefix and cannot be combined.
 //
@@ -110,7 +119,7 @@ type CommandFunc = func(Context) error
 // parsed from program args and return a parse error if defined as required and
 // not parsed from command line.
 //
-// Command can have a CommandFunc registered optionaly so that a Command can
+// Commands can have a CommandFunc registered optionaly so that a Command can
 // serve solely as sub-Command selector. For more details see CommandFunc.
 //
 // If no Params were defined on a Command all command line arguments following
@@ -118,21 +127,16 @@ type CommandFunc = func(Context) error
 //
 // If no params were defined on a Command and the command has no CommandFunc
 // registered an error is returned.
-//
 type Parser struct {
 	// args is a slice of arguments being parsed.
 	// Args are set once by Parse() then read and updated by Commands
 	// and Params down the Parse chain until exhausted or an error occurs
 	// using peek(), arg() and next().
 	args []string
-	// cmds is a slice of commands with an assigned handler invoked via
-	// command line in parse order. Used to track the command execution
-	// order and execute only the last parsed Command.
-	cmds []*Command
+	// matchedCommands is a slice of commands parsed from command line in the
+	// order as they were parsed.
+	matchedCommands []*Command
 	// Commands is the root command set.
-	//
-	// Root Commands as an exception allows a single Command
-	// with an empty name that serves as "global flag" container.
 	Commands
 }
 
@@ -161,6 +165,7 @@ func (p Parser) Print() string {
 	return sb.String()
 }
 
+// writeIndent writes an indent string of n depth to sb.
 func writeIndent(sb *strings.Builder, n int) {
 	for i := 0; i < n; i++ {
 		sb.WriteRune('\t')
@@ -223,15 +228,16 @@ func printCommands(sb *strings.Builder, commands *Commands, indent int) {
 	}
 }
 
-// reset resets any set states prior to parsing.
+// reset resets any Command and Param states prior to parsing.
 func (p *Parser) reset() {
-	p.cmds = []*Command{}
-	resetParams(&p.Commands)
+	p.matchedCommands = []*Command{}
+	resetCommands(&p.Commands)
 }
 
-// resetParams recursively resets all Params in Commands.
-func resetParams(c *Commands) {
+// resetCommands recursively resets all Params in Commands.
+func resetCommands(c *Commands) {
 	for _, cmd := range c.commandmap {
+		cmd.executed = false
 		cmd.Params.rawargs = []string{}
 		if len(cmd.Params.longparams) > 0 {
 			for _, p := range cmd.Params.longparams {
@@ -239,8 +245,66 @@ func resetParams(c *Commands) {
 				p.rawvalue = ""
 			}
 		}
-		resetParams(&cmd.Commands)
+		resetCommands(&cmd.Commands)
 	}
+}
+
+// context is the Context adapter.
+type context struct{ cmd *Command }
+
+// Args returns raw Command arguments.
+func (c *context) Args() []string { return c.cmd.Params.rawargs }
+
+// Parsed returns if the long named parameter was parsed.
+func (c *context) Parsed(name string) bool {
+	if param, exists := c.cmd.Params.longparams[name]; exists {
+		return param.parsed
+	}
+	return false
+}
+
+// Arg returns the raw parameter of the parameter with specified long name.
+func (c *context) Arg(name string) string {
+	if param, exists := c.cmd.Params.longparams[name]; exists {
+		return param.rawvalue
+	}
+	return ""
+}
+
+// Executed returns if the context's Command was executed or just visited.
+func (c *context) Executed() bool { return c.cmd.executed }
+
+// Print prints the context's Command.
+func (c *context) Print() string { return c.cmd.Print() }
+
+// exec executes the context's command and returns its' handler return value.
+func (c *context) exec() error {
+	if c.cmd.f != nil {
+		return c.cmd.f(c)
+	}
+	return nil
+}
+
+// visitCommands visits all matched commands, constructs a context and calls
+// their handlers. Propagates return value of last matched Commands' handler.
+func (p *Parser) visitCommands() error {
+	var ctx context
+	var l = len(p.matchedCommands)
+	if l < 1 {
+		return nil
+	}
+	var i int
+	var err error
+	for i = 0; i < l-1; i++ {
+		ctx.cmd = p.matchedCommands[i]
+		ctx.cmd.executed = false
+		if err = ctx.exec(); err != nil {
+			return err
+		}
+	}
+	ctx.cmd = p.matchedCommands[i]
+	ctx.cmd.executed = true
+	return ctx.exec()
 }
 
 // argKind defines argument kind.
@@ -335,6 +399,9 @@ type Command struct {
 	// Can be nil, CommandFunc or CommandRawFunc.
 	f CommandFunc
 
+	// executed specifies if this command was executed.
+	executed bool
+
 	Params   // Params are this Command's Params.
 	Commands // Commands are this Command's Commands.
 }
@@ -350,6 +417,9 @@ func newCommand(parent *Commands, help string, f CommandFunc) *Command {
 	p.Commands = *newCommands(p)
 	return p
 }
+
+// Executed returns if the command was executed.
+func (c *Command) Executed() bool { return c.executed }
 
 // Print prints Commands contained in this Command.
 func (c *Command) Print() string {
@@ -448,14 +518,8 @@ func (c *Commands) parse(cl *Parser) error {
 	switch arg, kind := cl.arg(); kind {
 	case argNone:
 		// Execute last matched Command.
-		if p := c.parser(); len(p.cmds) > 0 {
-			// If Command has handler propagate its result.
-			if cmd = p.cmds[len(p.cmds)-1]; cmd.f != nil {
-				return cmd.f(&cmd.Params)
-			}
-			// Otherwise return success as command
-			// was a params with values placeholder.
-			return nil
+		if len(cl.matchedCommands) > 0 {
+			return cl.visitCommands()
 		}
 		// Otherwise, nothing was matched so far.
 		return ErrNoArgs
@@ -464,9 +528,10 @@ func (c *Commands) parse(cl *Parser) error {
 		if cmd, exists = c.commandmap[arg]; !exists {
 			// See if last matched command has no defined params
 			// and execute it with stored raw params.
-			if p := c.parser(); len(p.cmds) > 0 {
-				if cmd = p.cmds[len(p.cmds)-1]; cmd.f != nil && cmd.ParamCount() == 0 {
-					return cmd.f(&cmd.Params)
+
+			if len(cl.matchedCommands) > 0 {
+				if cmd = cl.matchedCommands[len(cl.matchedCommands)-1]; cmd.f != nil && cmd.ParamCount() == 0 {
+					return cl.visitCommands()
 				}
 			}
 			// Else, this is extra.
@@ -490,9 +555,7 @@ func (c *Commands) parse(cl *Parser) error {
 		return err
 	}
 	// Append command to matched commands.
-	if p := c.parser(); true {
-		p.cmds = append(p.cmds, cmd)
-	}
+	cl.matchedCommands = append(cl.matchedCommands, cmd)
 	// Repeat parse on these Commands if "global params"
 	// empty Command name container was invoken.
 	if global {
@@ -502,12 +565,14 @@ func (c *Commands) parse(cl *Parser) error {
 	return cmd.Commands.parse(cl)
 }
 
-// parser help.
-func (c *Commands) parser() *Parser {
-	if cmd, ok := c.parent.(*Command); ok {
+// parser returns the parser these Commands belong to.
+func (c *Commands) parser() (p *Parser) {
+	var cmd *Command
+	var ok bool
+	if cmd, ok = c.parent.(*Command); ok {
 		return cmd.parent.parser()
 	}
-	if p, ok := c.parent.(*Parser); ok {
+	if p, ok = c.parent.(*Parser); ok {
 		return p
 	}
 	panic("commands have no parent parser")
@@ -540,9 +605,6 @@ func newParam(help string, required, raw bool, value interface{}) *Param {
 		value:    value,
 	}
 }
-
-// Value returns the Param value.
-func (p *Param) Value() interface{} { return p.value }
 
 // nameToParam maps a param name to *Param.
 type nameToParam map[string]*Param
@@ -630,35 +692,6 @@ func (p *Params) MustAddRawParam(name, help string, required bool, value interfa
 	}
 	return p.cmd
 }
-
-// Parsed returns if the param under specified name was parsed.
-// If the Param under specified name is not registered, returns false.
-func (p *Params) Parsed(name string) bool {
-	if param, exists := p.longparams[name]; exists {
-		return param.parsed
-	}
-	return false
-}
-
-// RawValue returns raw string value passed to a param, which could be empty.
-//
-// It will return a non-empty value if param under specified name was
-// registered, accepts an optional or required argument and was parsed from
-// command line arguments.
-func (p *Params) RawValue(name string) string {
-	if param, exists := p.longparams[name]; exists {
-		return param.rawvalue
-	}
-	return ""
-}
-
-// RawArgs returns arguments of raw Params in order as passed on command line.
-// It will be an empty slice if no arguments were passed to the param or the
-// param is not raw type.
-func (p *Params) RawArgs() []string { return p.rawargs }
-
-// Command returns the parent Command of these Params.
-func (p *Params) Command() *Command { return p.cmd }
 
 // hasRawArgs returns if Params contain one or more raw Param instances.
 func (p *Params) hasRawArgs() bool {

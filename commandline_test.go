@@ -1,3 +1,7 @@
+// Copyright 2020 Vedran Vuk. All rights reserved.
+// Use of this source code is governed by a MIT
+// license that can be found in the LICENSE file.
+
 package commandline
 
 import (
@@ -38,6 +42,94 @@ func TestCommands(t *testing.T) {
 	}
 }
 
+func TestVisit(t *testing.T) {
+	cl := New()
+	var foocount int
+	var foo = func(ctx Context) error {
+		foocount++
+		if ctx.Executed() {
+			t.Fatal("Command.Executed() failed.")
+		}
+		return nil
+	}
+	var barcount int
+	var bar = func(ctx Context) error {
+		barcount++
+		if ctx.Executed() {
+			t.Fatal("Command.Executed() failed.")
+		}
+		return nil
+	}
+	var bazcount int
+	var baz = func(ctx Context) error {
+		bazcount++
+		if ctx.Executed() {
+			t.Fatal("Command.Executed() failed.")
+		}
+		return nil
+	}
+	var batcount int
+	var bat = func(ctx Context) error {
+		batcount++
+		if !ctx.Executed() {
+			t.Fatal("Command.Executed() failed.")
+		}
+		return nil
+	}
+	cl.MustAddCommand("foo", "", foo).
+		MustAddCommand("bar", "", bar).
+		MustAddCommand("baz", "", baz).
+		MustAddCommand("bat", "", bat)
+	if err := cl.Parse([]string{"foo", "bar", "baz", "bat"}); err != nil {
+		t.Fatal(err)
+	}
+	if foocount != 1 || barcount != 1 || bazcount != 1 || batcount != 1 {
+		fmt.Println(foocount, barcount, bazcount, batcount)
+		t.Fatal("Visit failed.")
+	}
+}
+
+func TestContextPrefixed(t *testing.T) {
+	var bar string
+	var foo = func(ctx Context) error {
+		if !ctx.Parsed("bar") {
+			t.Fatal("Context failed.")
+		}
+		if ctx.Arg("bar") != "baz" {
+			t.Fatal("Context failed.")
+		}
+		if len(ctx.Args()) != 0 {
+			t.Fatal("Context failed.")
+		}
+		return nil
+	}
+	cl := New()
+	cl.MustAddCommand("foo", "", foo).MustAddParam("bar", "b", "", false, &bar)
+	if err := cl.Parse([]string{"foo", "--bar", "baz"}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestContextRaw(t *testing.T) {
+	var foo = func(ctx Context) error {
+		if !ctx.Parsed("bar") {
+			t.Fatal("Context failed.")
+		}
+		if ctx.Arg("bar") != "bar" {
+			t.Fatal("Context failed.")
+		}
+		if len(ctx.Args()) != 0 {
+			t.Fatal("Context failed.")
+		}
+		return nil
+	}
+	cl := New()
+	cl.MustAddCommand("foo", "", foo).MustAddRawParam("bar", "", false, nil)
+	if err := cl.Parse([]string{"foo", "bar"}); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestGlobal(t *testing.T) {
 	cl := New()
 	barCmd := func(params Context) error {
@@ -72,7 +164,7 @@ func TestNoRegisteredParams(t *testing.T) {
 		return ErrOK
 	}
 	cmdBar := func(params Context) error {
-		for idx, arg := range params.RawArgs() {
+		for idx, arg := range params.Args() {
 			if barArgs[idx+1] != arg {
 				t.Fatal("Unregistered param mode failed.")
 			}
@@ -96,10 +188,10 @@ func TestNoRegisteredParams(t *testing.T) {
 
 func TestRegisteredRaw(t *testing.T) {
 	cmdFoo := func(params Context) error {
-		if params.RawValue("bar") != "bar" {
+		if params.Arg("bar") != "bar" {
 			t.Fatal("RegisteredRaw failed.")
 		}
-		if params.RawValue("baz") != "baz" {
+		if params.Arg("baz") != "baz" {
 			t.Fatal("RegisteredRaw failed.")
 		}
 		return nil
@@ -154,7 +246,7 @@ func TestRegisteredRawRequired(t *testing.T) {
 func TestPrefixed(t *testing.T) {
 	barv := ""
 	cmdFoo := func(params Context) error {
-		if params.RawValue("bar") != "bar" {
+		if params.Arg("bar") != "bar" {
 			t.Fatal("TestPrefixed failed.")
 		}
 		if !params.Parsed("baz") {
@@ -316,7 +408,9 @@ func BenchmarkParser(b *testing.B) {
 	cl.MustAddCommand("foo", "Do the foo.", nil).MustAddParam("bar", "r", "Enable bar.", true, &barVal).
 		MustAddCommand("baz", "Do the baz.", cmdfunc).MustAddRawParam("bat", "Enable bat.", false, nil)
 	b.ResetTimer()
-	cl.Parse([]string{"--verbose", "foo", "--bar", "bar", "baz", "bat"})
+	for i := 0; i < b.N; i++ {
+		cl.Parse([]string{"--verbose", "foo", "--bar", "bar", "baz", "bat"})
+	}
 }
 
 func ExampleParser() {
