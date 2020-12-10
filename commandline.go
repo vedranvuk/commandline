@@ -319,7 +319,8 @@ func (p *Parser) visitCommands() error {
 type argKind int
 
 const (
-	argNone         argKind = iota // Invalid/no argument.
+	argInvalid      argKind = iota // Invalid argument.
+	argNone                        // No argument.
 	argCommandOrRaw                // Command or raw argument.
 	argLong                        // Param with long name.
 	argShort                       // Param with short name.
@@ -329,6 +330,8 @@ const (
 // String implements stringer on argKind.
 func (ak argKind) String() (s string) {
 	switch ak {
+	case argInvalid:
+		s = "invalid"
 	case argNone:
 		s = "none"
 	case argCommandOrRaw:
@@ -352,42 +355,49 @@ func (p *Parser) peek() string {
 	return ""
 }
 
-// arg returns the first arg in Parser trimmed of any prefixes and its' kind.
-func (p *Parser) arg() (arg string, kind argKind) {
+// next returns the first next in Parser trimmed of any prefixes and its' kind.
+func (p *Parser) next() (arg string, kind argKind) {
+	kind = argNone
 	if len(p.args) == 0 {
-		return "", argNone
+		return
 	}
 	arg = p.args[0]
 	if len(arg) == 0 {
-		return "", argCommandOrRaw
-	}
-	for i := 0; ; i++ {
-		if arg[i] == '-' {
-			if kind == argNone {
-				kind = argShort
-				continue
-			}
-			if kind == argShort {
-				kind = argLong
-				continue
-			}
-		}
-		arg = arg[i:]
-		if kind == argNone {
-			kind = argCommandOrRaw
-		}
-		if kind == argShort {
-			if len(arg) > 1 {
-				kind = argComb
-			}
-		}
 		return
 	}
+	for i, l := 0, len(arg); i < l; i++ {
+		if arg[0] != '-' {
+			break
+		}
+		arg = arg[1:]
+		if kind == argNone {
+			kind = argShort
+			continue
+		}
+		if kind == argShort {
+			kind = argLong
+			continue
+		}
+		if kind == argLong {
+			return "", argInvalid
+		}
+	}
+	if len(arg) == 0 {
+		return "", argInvalid
+	}
+	if kind == argNone {
+		kind = argCommandOrRaw
+		return
+	}
+	if kind == argShort && len(arg) > 1 {
+		return arg, argComb
+	}
+	return
 }
 
-// next discards the first arg in the args slice and returns a bool indicating
+// skip discards the first arg in the args slice and returns a bool indicating
 // if there is any args left.
-func (p *Parser) next() bool {
+func (p *Parser) skip() bool {
 	if len(p.args) == 0 {
 		return false
 	}
@@ -475,8 +485,7 @@ func (c *Commands) AddCommand(name, help string, f CommandFunc) (*Command, error
 		}
 		return nil, fmt.Errorf("commandline: duplicate command name '%s'", name)
 	}
-	// Disallow adding sub-Commands to a Command that has
-	// a CommandRawFunc handler.
+	// Disallow adding sub-Commands to a Command with raw args.
 	if parentcmd, ok := c.parent.(*Command); ok {
 		if parentcmd.Params.hasRawArgs() {
 			return nil, errors.New("commandline: cannot register a sub-command in a command with raw parameters")
@@ -518,7 +527,9 @@ func (c *Commands) MustGetCommand(name string) *Command {
 func (c *Commands) parse(cl *Parser) error {
 	var cmd *Command
 	var exists, global bool
-	switch arg, kind := cl.arg(); kind {
+	switch arg, kind := cl.next(); kind {
+	case argInvalid:
+		return errors.New("commandline: invalid argument")
 	case argNone:
 		// Execute last matched Command.
 		if len(cl.matchedCommands) > 0 {
@@ -551,7 +562,7 @@ func (c *Commands) parse(cl *Parser) error {
 	}
 	// Advance to next arg, stop if no more.
 	if !global {
-		cl.next()
+		cl.skip()
 	}
 	// Parse Params.
 	if err := cmd.Params.parse(cl); err != nil {
@@ -725,7 +736,8 @@ func (p *Params) addParam(long, short, help string, required, raw bool, value in
 	if _, exists := p.shortparams[short]; exists && short != "" {
 		return fmt.Errorf("commandline: duplicate short parameter name '%s'", short)
 	}
-	// Param continuity checks.
+	// Raw params can only be registered after prefixed params.
+	// Optional raw params can only be registered after required raw params.
 	if lp := p.last(); lp != nil {
 		if lp.raw {
 			if !raw {
@@ -736,10 +748,6 @@ func (p *Params) addParam(long, short, help string, required, raw bool, value in
 			}
 			if !lp.required && required {
 				return errors.New("commandline: cannot register required after optional parameter")
-			}
-		} else {
-			if !raw && !lp.required && required {
-				return errors.New("commandline: cannot register required after a optional parameter")
 			}
 		}
 	}
@@ -800,8 +808,10 @@ func (p *Params) parse(cl *Parser) error {
 		return nil
 	}
 	for i := 0; i < count; {
-		arg, kind = cl.arg()
+		arg, kind = cl.next()
 		switch kind {
+		case argInvalid:
+			return errors.New("commandline: invalid argument")
 		case argNone:
 			// Nothing to parse.
 			goto check
@@ -843,17 +853,25 @@ func (p *Params) parse(cl *Parser) error {
 				if param.value != nil {
 					return fmt.Errorf("commandline: short parameter '%s' requires argument, cannot combine", short)
 				}
+				// Param is specified multiple times.
+				if param.parsed {
+					return fmt.Errorf("commandline: parameter '%s' specified multiple times", short)
+				}
 				param.parsed = true
 				i++
 			}
-			cl.next()
+			cl.skip()
 			continue
+		}
+		// Param is specified multiple times.
+		if param.parsed {
+			return fmt.Errorf("commandline: parameter '%s' specified multiple times", arg)
 		}
 		// Parse value argument for params with value.
 		if param.value != nil {
 			// Advance argument for prefixed params.
 			if !param.raw {
-				if !cl.next() {
+				if !cl.skip() {
 					return fmt.Errorf("commandline: parameter '%s' requires a value", arg)
 				}
 				arg = cl.peek()
@@ -866,7 +884,7 @@ func (p *Params) parse(cl *Parser) error {
 		// Advance.
 		param.rawvalue = arg
 		param.parsed = true
-		if !cl.next() {
+		if !cl.skip() {
 			break
 		}
 	}

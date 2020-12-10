@@ -13,7 +13,8 @@ Commands can have Commands of their own allowing for a Command hierarchy.
 Params can be Prefixed (specified by name) or Raw (specified by index and 
 addressable by name).
 
-Commandline's only dependency outside of stdlib is `github.com/vedranvuk/strconvex` 
+Commandline's only dependency outside of stdlib is 
+[`github.com/vedranvuk/strconvex`](https://github.com/vedranvuk/strconvex)
 which is a lightweight, reflect-based string to Go value converter used for 
 converting command line arguments to their registered variables. Please
 see that package for details on how Commandline converts strings to Go values.
