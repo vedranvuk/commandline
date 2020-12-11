@@ -131,7 +131,7 @@ type CommandFunc = func(Context) error
 // serve solely as sub-Command selector. For more details see CommandFunc.
 //
 // If no Params were defined on a Command all command line arguments following
-// the command invocation will be passed to Command handler via Params.RawArgs.
+// the command invocation will be passed to Command handler via Params.Args.
 //
 // If no params were defined on a Command and the command has no CommandFunc
 // registered an error is returned.
