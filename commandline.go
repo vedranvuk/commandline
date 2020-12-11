@@ -66,8 +66,9 @@ type Context interface {
 // as executed and can be discerned from visited CommandFuncs using
 // Context.Executed().
 //
-// If a CommandFunc returns a non-nil error further calling of parsed Commands
-// CommandFuncs is aborted and the error is propagated to Parse method.
+// If a CommandFunc returns a non-nil error further calling of handlers of
+// Commands parsed from command line arguments is aborted and the error is 
+// propagated to Parse method and returned.
 type CommandFunc = func(Context) error
 
 // Parser is a command line parser. Its' Parse method is to be invoked
