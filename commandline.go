@@ -159,8 +159,8 @@ func New() *Parser {
 // it is returned. Returns ErrNoArgs if args are empty and there are defined
 // Commands or Params.
 func (p *Parser) Parse(args []string) error {
-	p.args = args
 	p.reset()
+	p.args = args
 	return p.Commands.parse(p)
 }
 
@@ -235,7 +235,7 @@ func printCommands(sb *strings.Builder, commands *Commands, indent int) {
 	}
 }
 
-// reset resets any Command and Param states prior to parsing.
+// reset resets states of Parser, Commands and their params.
 func (p *Parser) reset() {
 	p.matchedCommands = []*Command{}
 	resetCommands(&p.Commands)
@@ -243,13 +243,15 @@ func (p *Parser) reset() {
 
 // resetCommands recursively resets all Commands and their Params states.
 func resetCommands(c *Commands) {
-	for _, cmd := range c.commandmap {
+	var cmd *Command
+	var param *Param
+	for _, cmd = range c.commandmap {
 		cmd.executed = false
 		cmd.Params.rawargs = []string{}
 		if len(cmd.Params.longparams) > 0 {
-			for _, p := range cmd.Params.longparams {
-				p.parsed = false
-				p.rawvalue = ""
+			for _, param = range cmd.Params.longparams {
+				param.parsed = false
+				param.rawvalue = ""
 			}
 		}
 		resetCommands(&cmd.Commands)
