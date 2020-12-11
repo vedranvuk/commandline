@@ -43,12 +43,12 @@ type Context interface {
 	// Parsed returns if the parameter under specified long name was parsed.
 	// If the parameter under specified long name was not defined returns false.
 	Parsed(string) bool
-	// Arg returns the argument of parameter under specified long name or 
+	// Arg returns the argument of parameter under specified long name or
 	// registered raw parameter.
 	// If parameter was not parsed an empty string is returned.
 	Arg(string) string
 	// Args returns a slice of arguments passed to a Command in the order as
-	// they were parsed if Command has no defined parameters and eturns an 
+	// they were parsed if Command has no defined parameters and eturns an
 	// empty slice if Command has any defined parameters, prefixed or raw.
 	//
 	// It is used to retrieve arguments from a handler to implement custom
@@ -67,7 +67,7 @@ type Context interface {
 // Context.Executed().
 //
 // If a CommandFunc returns a non-nil error further calling of handlers of
-// Commands parsed from command line arguments is aborted and the error is 
+// Commands parsed from command line arguments is aborted and the error is
 // propagated to Parse method and returned.
 type CommandFunc = func(Context) error
 
@@ -258,44 +258,49 @@ func resetCommands(c *Commands) {
 	}
 }
 
-// context is the Context adapter.
+// context is the Context adapter. It wraps a Command and returns its'
+// properties and the properties of its' Params in a single type that directly
+// implements Context interface.
 type context struct{ cmd *Command }
 
-// Name returns Command's name.
+// Name implements Context.Name.
 func (c *context) Name() string { return c.cmd.name }
 
-// Args returns raw Command arguments.
-func (c *context) Args() []string { return c.cmd.Params.rawargs }
+// Executed implements Context.Executed.
+func (c *context) Executed() bool { return c.cmd.executed }
 
-// Parsed returns if the long named parameter was parsed.
+// Parsed implements Context.Parsed.
 func (c *context) Parsed(name string) bool {
-	if param, exists := c.cmd.Params.longparams[name]; exists {
+	var param *Param
+	var exists bool
+	if param, exists = c.cmd.Params.longparams[name]; exists {
 		return param.parsed
 	}
 	return false
 }
 
-// Arg returns the argument of the raw parameter or prefixed parameter with
-// specified long name.
+// Arg implements Context.Arg.
 func (c *context) Arg(name string) string {
-	if param, exists := c.cmd.Params.longparams[name]; exists {
+	var param *Param
+	var exists bool
+	if param, exists = c.cmd.Params.longparams[name]; exists {
 		return param.rawvalue
 	}
 	return ""
 }
 
-// Executed returns if the context's Command was executed or just visited.
-func (c *context) Executed() bool { return c.cmd.executed }
+// Args implements Context.Args.
+func (c *context) Args() []string { return c.cmd.Params.rawargs }
 
-// Print prints the context's Command.
+// Print implements Context.Print.
 func (c *context) Print() string { return c.cmd.print() }
 
 // exec executes the context's command and returns its' handler return value.
 func (c *context) exec() error {
-	if c.cmd.f != nil {
-		return c.cmd.f(c)
+	if c.cmd.f == nil {
+		return nil
 	}
-	return nil
+	return c.cmd.f(c)
 }
 
 // visitCommands visits all matched commands, constructs a context and calls
