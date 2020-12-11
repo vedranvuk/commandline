@@ -138,8 +138,7 @@ type CommandFunc = func(Context) error
 type Parser struct {
 	// args is a slice of arguments being parsed.
 	// Args are set once by Parse() then read and updated by Commands
-	// and Params down the Parse chain until exhausted or an error occurs
-	// using peek(), arg() and next().
+	// and Params down the Parse chain until exhausted or an error occurs.
 	args []string
 	// matchedCommands is a slice of commands parsed from command line in the
 	// order as they were parsed.
