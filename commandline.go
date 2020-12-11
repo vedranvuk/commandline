@@ -43,13 +43,16 @@ type Context interface {
 	// Parsed returns if the parameter under specified long name was parsed.
 	// If the parameter under specified long name was not defined returns false.
 	Parsed(string) bool
-	// Arg returns the argument of parameter under specified long name if the
-	// parameter is prefixed, or name if the parameter is raw.
+	// Arg returns the argument of parameter under specified long name or 
+	// registered raw parameter.
 	// If parameter was not parsed an empty string is returned.
 	Arg(string) string
-	// Args returns a slice of arguments passed to Command in the order as they
-	// were parsed if Command has no defined parameters. It returns an empty
-	// slice if Command has one or more defined parameters, prefixed or raw.
+	// Args returns a slice of arguments passed to a Command in the order as
+	// they were parsed if Command has no defined parameters and eturns an 
+	// empty slice if Command has any defined parameters, prefixed or raw.
+	//
+	// It is used to retrieve arguments from a handler to implement custom
+	// argument parsing.
 	Args() []string
 	// Print prints sub Commands of the Command this Context belongs to.
 	Print() string
