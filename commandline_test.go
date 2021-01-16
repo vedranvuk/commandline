@@ -12,43 +12,43 @@ import (
 
 // Test parser's command line argument detection.
 func TestParserNext(t *testing.T) {
-	var cl = New()
+	var cl = NewState()
 	var arg string
-	var kind argKind
-	cl.args = []string{}
-	if arg, kind = cl.next(); arg != "" || kind != argNone {
+	var kind Argument
+	cl.arguments = []string{}
+	if arg, kind = cl.Next(); arg != "" || kind != NoArgument {
 		t.Fatal("Error parsing argument.")
 	}
-	cl.args = []string{""}
-	if arg, kind = cl.next(); arg != "" || kind != argNone {
+	cl.arguments = []string{""}
+	if arg, kind = cl.Next(); arg != "" || kind != NoArgument {
 		t.Fatal("Error parsing argument.")
 	}
-	cl.args = []string{"-"}
-	if arg, kind = cl.next(); arg != "" || kind != argInvalid {
+	cl.arguments = []string{"-"}
+	if arg, kind = cl.Next(); arg != "" || kind != InvalidArgument {
 		t.Fatal("Error parsing argument.")
 	}
-	cl.args = []string{"--"}
-	if arg, kind = cl.next(); arg != "" || kind != argInvalid {
+	cl.arguments = []string{"--"}
+	if arg, kind = cl.Next(); arg != "" || kind != InvalidArgument {
 		t.Fatal("Error parsing argument.")
 	}
-	cl.args = []string{"---"}
-	if arg, kind = cl.next(); arg != "" || kind != argInvalid {
+	cl.arguments = []string{"---"}
+	if arg, kind = cl.Next(); arg != "" || kind != InvalidArgument {
 		t.Fatal("Error parsing argument.")
 	}
-	cl.args = []string{"foo"}
-	if arg, kind = cl.next(); arg != "foo" || kind != argCommandOrRaw {
+	cl.arguments = []string{"foo"}
+	if arg, kind = cl.Next(); arg != "foo" || kind != TextArgument {
 		t.Fatal("Error parsing argument.")
 	}
-	cl.args = []string{"-f"}
-	if arg, kind = cl.next(); arg != "f" || kind != argShort {
+	cl.arguments = []string{"-f"}
+	if arg, kind = cl.Next(); arg != "f" || kind != ShortArgument {
 		t.Fatal("Error parsing argument.")
 	}
-	cl.args = []string{"--foo"}
-	if arg, kind = cl.next(); arg != "foo" || kind != argLong {
+	cl.arguments = []string{"--foo"}
+	if arg, kind = cl.Next(); arg != "foo" || kind != LongArgument {
 		t.Fatal("Error parsing argument.")
 	}
-	cl.args = []string{"-foo"}
-	if arg, kind = cl.next(); arg != "foo" || kind != argComb {
+	cl.arguments = []string{"-foo"}
+	if arg, kind = cl.Next(); arg != "foo" || kind != CombinedArgument {
 		t.Fatal("Error parsing argument.")
 	}
 }
@@ -58,60 +58,57 @@ func TestCommands(t *testing.T) {
 	var cmdfunc = func(ctx Context) error {
 		return nil
 	}
-	var cl = New()
+	var state = NewState()
 	var err error
 	// Register empty root command.
-	var cmd = cl.MustAddCommand("", "", nil)
+	var command = state.MustAddCommand("", "", nil)
 	// Cannot re-register empty root command.
-	if _, err = cl.AddCommand("", "", nil); err == nil {
+	if _, err = state.AddCommand("", "", nil); err == nil {
 		t.Fatal("Failed detecting duplicate empty root command.")
-	}
-	// Sub-commands cannot have an empty name.
-	if _, err = cmd.AddCommand("", "", nil); err == nil {
-		t.Fatal("Failed detecting empty non-root command name.")
 	}
 	var fooval string
 	// Register a "foo" param with required arg on empty root command.
-	cmd.MustAddParam("foo", "", "", true, &fooval)
+	command.MustAddParam("foo", "", "", true, &fooval)
 	// "--foo" parses "foo" to fooval for empty root command.
-	if err = cl.Parse([]string{"--foo", "foo"}); err != nil {
+	if err = state.Parse([]string{"--foo", "foo"}); err != nil {
 		t.Fatal(err)
 	}
 	// "--boo" is not a registered empty root command param.
-	if err := cl.Parse([]string{"--boo"}); err == nil {
+	if err := state.Parse([]string{"--boo"}); err == nil {
 		t.Fatal("Failed detecting non-existent empty root command param.")
 	}
 	// again, but with an argument.
-	if err := cl.Parse([]string{"--boo", "boo"}); err == nil {
+	if err := state.Parse([]string{"--boo", "boo"}); err == nil {
 		t.Fatal("Failed detecting non-existent empty root command param.")
 	}
 	// Register "foo" command in root.
-	cmd = cl.MustAddCommand("foo", "", cmdfunc)
+	command = state.MustAddCommand("foo", "", cmdfunc)
 	// No duplicate command names in root.
-	if _, err = cl.AddCommand("foo", "", nil); err == nil {
+	if _, err = state.AddCommand("foo", "", nil); err == nil {
 		t.Fatal("Failed detecting duplicate command name.")
 	}
 	// "foo" is a registered command.
-	if err = cl.Parse([]string{"foo"}); err != nil {
+	if err = state.Parse([]string{"foo"}); err != nil {
 		t.Fatal("Failed parsing command.")
 	}
 	// Add "bar" sub-command.
-	cmd.MustAddCommand("bar", "", cmdfunc)
+	command.MustAddCommand("bar", "", cmdfunc)
 	// No duplicate command names in subs.
-	if _, err = cmd.AddCommand("bar", "", nil); err == nil {
+	if _, err = command.AddCommand("bar", "", nil); err == nil {
 		t.Fatal("Failed detecting duplicate command name.")
 	}
 	// "foo" has "bar" sub-command.
-	if err = cl.Parse([]string{"foo", "bar"}); err != nil {
+	if err = state.Parse([]string{"foo", "bar"}); err != nil {
 		t.Fatal("Failed parsing commands.")
 	}
 	// "boo" is not a registered command.
-	if err = cl.Parse([]string{"boo"}); err == nil {
+	if err = state.Parse([]string{"boo"}); err == nil {
 		t.Fatal("Failed detecting non-existent command.")
 	}
-	// "boo" will be passed as raw argument to "foo".
-	if err = cl.Parse([]string{"foo", "boo"}); err != nil {
-		fmt.Println(err)
+	// "boo" will be passed as raw argument to "foo" but "foo" is not a raw
+	// command.
+	if err = state.Parse([]string{"foo", "boo"}); !errors.Is(err, ErrExtraArguments) {
+		t.Fatal(err)
 	}
 }
 
@@ -151,7 +148,7 @@ func TestHandlerVisit(t *testing.T) {
 		}
 		return nil
 	}
-	var cl = New()
+	var cl = NewState()
 	cl.MustAddCommand("foo", "", foo).
 		MustAddCommand("bar", "", bar).
 		MustAddCommand("baz", "", baz).
@@ -182,7 +179,7 @@ func TestHandlerErrorPropagation(t *testing.T) {
 		t.Fatal("Executed handler of a sub command after an error in a chain.")
 		return nil
 	}
-	var cl = New()
+	var cl = NewState()
 	cl.MustAddCommand("foo", "", foo).
 		MustAddCommand("bar", "", bar).
 		MustAddCommand("baz", "", baz)
@@ -200,15 +197,15 @@ func TestPrefixedParamFromContext(t *testing.T) {
 		if !ctx.Parsed("bar") {
 			t.Fatal("Prefixed param not marked as parsed.")
 		}
-		if ctx.Arg("bar") != "bar" {
+		if ctx.Value("bar") != "bar" {
 			t.Fatal("Unexpected prefixed param value.")
 		}
-		if len(ctx.Args()) != 0 {
+		if len(ctx.Arguments()) != 0 {
 			t.Fatal("Raw args must be accessible only when no params were registered.")
 		}
 		return nil
 	}
-	var cl = New()
+	var cl = NewState()
 	var err error
 	cl.MustAddCommand("foo", "", foo).MustAddParam("bar", "b", "", false, &bar)
 	if err = cl.Parse([]string{"foo", "--bar", "bar"}); err != nil {
@@ -223,15 +220,15 @@ func TestRawParamFromContext(t *testing.T) {
 		if !ctx.Parsed("bar") {
 			t.Fatal("Raw param not marked as parsed.")
 		}
-		if ctx.Arg("bar") != "bar" {
+		if ctx.Value("bar") != "bar" {
 			t.Fatal("Unexpected raw param value.")
 		}
-		if len(ctx.Args()) != 0 {
+		if len(ctx.Arguments()) != 0 {
 			t.Fatal("Raw args must be accessible only when no params were registered.")
 		}
 		return nil
 	}
-	var cl = New()
+	var cl = NewState()
 	var err error
 	cl.MustAddCommand("foo", "", foo).MustAddRawParam("bar", "", false, nil)
 	if err = cl.Parse([]string{"foo", "bar"}); err != nil {
@@ -243,15 +240,15 @@ func TestRawParamFromContext(t *testing.T) {
 // command via Context.
 func TestUnregisteredParamFromContext(t *testing.T) {
 	var foo = func(ctx Context) error {
-		var a = ctx.Args()
+		var a = ctx.Arguments()
 		if a[0] != "1" || a[1] != "2" || a[2] != "3" {
 			t.Fatal("Unexpected raw arguments.")
 		}
 		return nil
 	}
-	var cl = New()
+	var cl = NewState()
 	var err error
-	cl.MustAddCommand("foo", "", foo)
+	cl.MustAddRawCommand("foo", "", foo)
 	if err = cl.Parse([]string{"foo", "1", "2", "3"}); err != nil {
 		t.Fatal(err)
 	}
@@ -261,7 +258,7 @@ func TestUnregisteredParamFromContext(t *testing.T) {
 func TestPrefixed(t *testing.T) {
 	var barv string
 	var foo = func(ctx Context) error {
-		if ctx.Arg("bar") != "bar" {
+		if ctx.Value("bar") != "bar" {
 			t.Fatal("TestPrefixed failed.")
 		}
 		if !ctx.Parsed("baz") {
@@ -269,7 +266,7 @@ func TestPrefixed(t *testing.T) {
 		}
 		return nil
 	}
-	var cl = New()
+	var cl = NewState()
 	var err error
 	// Register "foo" command at root.
 	var cmd = cl.MustAddCommand("foo", "", foo)
@@ -335,7 +332,7 @@ func TestPrefixed(t *testing.T) {
 
 // Test prefixed short combined params.
 func TestPrefixedCombined(t *testing.T) {
-	var cl = New()
+	var cl = NewState()
 	var err error
 	var filip string
 	var root = cl.MustAddCommand("foo", "", nil).
@@ -390,15 +387,15 @@ func TestPrefixedCombined(t *testing.T) {
 // Test registered raw params.
 func TestRegisteredRaw(t *testing.T) {
 	var foo = func(ctx Context) error {
-		if ctx.Arg("bar") != "bar" {
+		if ctx.Value("bar") != "bar" {
 			t.Fatal("Unexpected parameter argument value.")
 		}
-		if ctx.Arg("baz") != "baz" {
+		if ctx.Value("baz") != "baz" {
 			t.Fatal("Unexpected parameter argument value.")
 		}
 		return nil
 	}
-	var cl = New()
+	var cl = NewState()
 	// Register "foo" command.
 	var cmd = cl.MustAddCommand("foo", "", foo).
 		// Register required "bar" raw parameter.
@@ -458,21 +455,21 @@ func TestNoRegisteredParams(t *testing.T) {
 		return handlererror
 	}
 	var bar = func(params Context) error {
-		if len(params.Args()) != len(barArgs[1:]) {
+		if len(params.Arguments()) != len(barArgs[1:]) {
 			t.Fatal("Expected argument count does not match.")
 		}
-		for idx, arg := range params.Args() {
+		for idx, arg := range params.Arguments() {
 			if barArgs[idx+1] != arg {
 				t.Fatal("Expected argument not found.")
 			}
 		}
 		return nil
 	}
-	var cl = New()
+	var cl = NewState()
 	// Register a command returning an error from a handler.
-	cl.MustAddCommand("foo", "", foo)
+	cl.MustAddRawCommand("foo", "", foo)
 	// Register a command whose handler handles raw arguments.
-	cl.MustAddCommand("bar", "", bar)
+	cl.MustAddRawCommand("bar", "", bar)
 	// Register a command with no handler.
 	cl.MustAddCommand("baz", "", nil)
 	var err error
@@ -492,7 +489,7 @@ func TestNoRegisteredParams(t *testing.T) {
 
 // Test combined prefixed and raw parameters.
 func TestCombined(t *testing.T) {
-	var cl = New()
+	var cl = NewState()
 	var valBar, valBit string
 	// Register "foo" command.
 	cl.MustAddCommand("foo", "", nil).
@@ -525,7 +522,7 @@ func TestCombined(t *testing.T) {
 }
 
 func BenchmarkRegisterCommand(b *testing.B) {
-	var cl = New()
+	var cl = NewState()
 	var names = make([]string, 0, b.N)
 	for i := 0; i < b.N; i++ {
 		names = append(names, fmt.Sprintf("command%d", i))
@@ -537,7 +534,7 @@ func BenchmarkRegisterCommand(b *testing.B) {
 }
 
 func BenchmarkRegisterParam(b *testing.B) {
-	var cl = New()
+	var cl = NewState()
 	var names = make([]string, 0, b.N)
 	for i := 0; i < b.N; i++ {
 		names = append(names, fmt.Sprintf("param%d", i))
@@ -550,7 +547,7 @@ func BenchmarkRegisterParam(b *testing.B) {
 }
 
 func BenchmarkParse(b *testing.B) {
-	cl := New()
+	cl := NewState()
 	var barVal string
 	var cmdfunc = func(ctx Context) error {
 		return nil
@@ -564,8 +561,8 @@ func BenchmarkParse(b *testing.B) {
 	}
 }
 
-func ExampleParser() {
-	cl := New()
+func ExampleState() {
+	cl := NewState()
 	var barVal string
 	var cmdfunc = func(ctx Context) error {
 		if ctx.Executed() && ctx.Name() == "baz" {
@@ -589,4 +586,53 @@ func ExampleParser() {
 
 	// 		baz     Do the baz.
 	// 				[bat]   Enable bat.
+}
+
+func TestRepeat(t *testing.T) {
+	var err error
+	var state = NewState()
+	var handler = func(ctx Context) error {
+		var err error
+		var value string
+		var innerhandler = func(ctx Context) error {
+			fmt.Println(ctx.Value("value"))
+			return nil
+		}
+		var state = NewState()
+		state.MustAddCommand("", "", innerhandler).MustAddParam("value", "v", "", false, &value)
+		var args = ctx.Arguments()
+		for len(args) > 0 {
+			err = state.Parse(args)
+			args = state.Arguments()
+			if err != nil {
+				if errors.Is(err, ErrDuplicateParameter) {
+					if err = state.VisitMatches(); err != nil {
+						return err
+					}
+					continue
+				}
+				fmt.Println(err)
+				break
+			}
+		}
+		return err
+	}
+	state.MustAddRawCommand("input", "", handler)
+	if err = state.Parse([]string{"input", "--value", "one", "--value", "two"}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestNewPattern(t *testing.T) {
+	var handler = func(ctx Context) error {
+		fmt.Println(ctx.Value("test"))
+		return nil
+	}
+	var commands = NewCommands(nil)
+	commands.MustAddCommand("test", "", handler).
+		MustAddParam("test", "t", "", false, nil)
+	var err error
+	if err = ParseArgs([]string{"test", "--test"}, commands); err != nil {
+		t.Fatal(err)
+	}
 }
